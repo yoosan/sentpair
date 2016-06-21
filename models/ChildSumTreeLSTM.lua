@@ -95,7 +95,7 @@ function ChildSumTreeLSTM:forward(tree, inputs)
             loss = loss + self.criterion:forward(tree.output, tree.gold_label)
         end
     end
-    return tree.state, loss
+    return tree.state[2], loss
 end
 
 function ChildSumTreeLSTM:backward(tree, inputs, grad)

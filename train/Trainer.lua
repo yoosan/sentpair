@@ -7,7 +7,7 @@
 local Trainer = torch.class('Trainer')
 
 function Trainer:__init(config)
-    self.task          = config.task -- SICK, SNLI, MSRP, WQA
+    self.task          = config.task          or 'SICK' -- SICK, SNLI, MSRP, WQA
     self.mem_dim       = config.mem_dim       or 150
     self.learning_rate = config.learning_rate or 0.05
     self.batch_size    = config.batch_size    or 25
@@ -157,7 +157,7 @@ function Trainer:train(dataset)
                 local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
                 -- forward and get representations of the sent pair
-                local lrep, rrep
+                local lrep, rrep, seq_lrep, seq_rrep
                 if self.structure == 'lstm' or self.structure == 'gru' then
                     lrep = self.lmodel:forward(linputs)
                     rrep = self.rmodel:forward(rinputs)
@@ -165,8 +165,8 @@ function Trainer:train(dataset)
                     lrep = self.model:forward(ltree, linputs)
                     rrep = self.model:forward(rtree, rinputs)
                 else
-                    local seq_lrep = self.latt:forward(linputs)
-                    local seq_rrep = self.ratt:forward(rinputs)
+                    seq_lrep = self.latt:forward(linputs)
+                    seq_rrep = self.ratt:forward(rinputs)
                     lrep = self.model:forward(ltree, linputs, seq_lrep)
                     rrep = self.model:forward(rtree, rinputs, seq_rrep)
                 end
@@ -177,10 +177,173 @@ function Trainer:train(dataset)
                 loss = loss + example_loss
 
                 -- backward
-                
+                local out_grad = self.criterion:backward(output, targets[j])
+                local rep_grads = self.output_module:backward({lrep, rrep}, out_grad)
+                local lrep_grad, rrep_grad = rep_grads[1], rep_grads[2]
+
+                -- backward grads of representation
+                if self.structure == 'lstm' or self.structure == 'gru' then
+                    self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grads)
+                elseif self.sturcture == 'treegru' then
+                    self.model:backward(ltree, linputs, lrep_grad)
+                    self.model:backward(rtree, rinputs, rrep_grad)
+                elseif self.structure == 'treelstm' then
+                    self.model:backward(ltree, linputs, {zeros, lrep_grad})
+                    self.model:backward(rtree, rinputs, {zeros, rrep_grad})
+                elseif self.structure == 'atreegru' then
+                    self.model:backward(ltree, linputs, seq_lrep, lrep_grad)
+                    self.model:backward(rtree, rinputs, seq_rrep, rrep_grad)
+                elseif self.structure == 'atreelstm' then
+                    self.model:backward(ltree, linputs, seq_lrep, {zeros, lrep_grad})
+                    self.model:backward(rtree, rinputs, seq_rrep, {zeros, rrep_grad})
+                end
+
             end
+            loss = loss / batch_size
+            self.grad_params:div(batch_size)
+
+            -- regularization
+            loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+            self.grad_params:add(self.reg, self.params)
+            return loss, self.grad_params
         end
-
+        self.optim_func(feval, self.params, self.optim_state)
     end
+    xlua.progress(dataset.size, dataset.size)
+end
 
+function Trainer:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
+    local lgrad, rgrad
+    lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
+    rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
+    lgrad[lsent:nElement()] = rep_grad[1]
+    rgrad[rsent:nElement()] = rep_grad[2]
+    self.lmodel:backward(linputs, lgrad)
+    self.rmodel:backward(rinputs, rgrad)
+end
+
+function Trainer:eval(dataset)
+    self.modules:evaluate()
+    local predictions = torch.zeros(dataset.size)
+    for i = 1, dataset.size do
+        xlua.progress(i, dataset.size)
+        local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
+        local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
+        local linputs = self.emb_vecs:index(1, lsent:long()):double()
+        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+        local lrep, rrep, seq_lrep, seq_rrep
+        if self.structure == 'lstm' or self.structure == 'gru' then
+            lrep = self.lmodel:forward(linputs)
+            rrep = self.rmodel:forward(rinputs)
+            self.lmodel:forget()
+            self.rmodel:forget()
+        elseif self.sturcture == 'treelstm' or self.sturcture == 'treegru' then
+            lrep = self.model:forward(ltree, linputs)
+            rrep = self.model:forward(rtree, rinputs)
+            self.model:clean(ltree)
+            self.model:clean(rtree)
+        else
+            seq_lrep = self.latt:forward(linputs)
+            seq_rrep = self.ratt:forward(rinputs)
+            lrep = self.model:forward(ltree, linputs, seq_lrep)
+            rrep = self.model:forward(rtree, rinputs, seq_rrep)
+            self.model:clean(ltree)
+            self.model:clean(rtree)
+            self.latt:forget()
+            self.ratt:forget()
+        end
+        local output = self.output_module:forward({lrep, rrep})
+        predictions[i] = stats.argmax(output)
+    end
+    return predictions
+end
+
+function Trainer:run(n_epoches, dset_train, dset_dev, dset_test)
+    header('Training model ... ')
+    local train_start = sys.clock()
+    local best_score = -1.0
+    local best_params
+    for i = 1, n_epoches do
+        local start = sys.clock()
+        printf('-- epoch %d \n', i)
+        self:train(dset_train)
+        printf('-- finished epoch in %.2fs\n', sys.clock() - start)
+        local predictions = self:eval(dset_dev)
+        local dev_score
+        if self.task == 'SICK' then
+            local pearson_score = stats.pearson(predictions, dset_dev.labels)
+            local spearman_score = stats.spearmanr(predictions, dset_dev.labels)
+            local mse_score = stats.mse(predictions, dset_dev.labels)
+            printf('-- Dev pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
+                pearson_score, spearman_score, mse_score)
+            dev_score = pearson_score
+        elseif self.task == 'MSRP' then
+            local accuracy = stats.accuracy(predictions, dset_dev.labels)
+            local f1 = stats.f1(predictions, dset_dev.labels)
+            printf('-- Dev accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
+            dev_score = accuracy
+        else
+            local accuracy = stats.accuracy(predictions, dset_dev.labels)
+            printf('-- Dev accuracy = %.4f \n', accuracy)
+            dev_score = accuracy
+        end
+        if dev_score > best_score then
+            best_score = dev_score
+            best_params = self.params
+        end
+    end
+    printf('finished training in %.2fs\n', sys.clock() - train_start)
+    header('Evaluating on test set')
+    printf('-- using model with dev score = %.4f\n', best_score)
+    self.params = best_params
+    local test_preds = self:eval(dset_test)
+    if self.task == 'SICK' then
+        local pearson_score = stats.pearson(test_preds, dset_test.labels)
+        local spearman_score = stats.spearmanr(test_preds, dset_test.labels)
+        local mse_score = stats.mse(test_preds, dset_test.labels)
+        printf('-- Test pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
+            pearson_score, spearman_score, mse_score)
+    elseif self.task == 'MSRP' then
+        local accuracy = stats.accuracy(test_preds, dset_test.labels)
+        local f1 = stats.f1(test_preds, dset_test.labels)
+        printf('-- Test accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
+    else
+        local accuracy = stats.accuracy(test_preds, dset_test.labels)
+        printf('-- Test accuracy = %.4f \n', accuracy)
+    end
+end
+
+function Trainer:print_config()
+    local num_params = self.params:nElement()
+    local num_output_params = self:new_output_module():getParameters():nElement()
+    printf('%-25s = %s\n',   'running task', self.task)
+    printf('%-25s = %d\n',   'num params', num_params)
+    printf('%-25s = %d\n',   'num compositional params', num_params - num_output_params)
+    printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
+    printf('%-25s = %d\n',   'memory dim', self.mem_dim)
+    printf('%-25s = %d\n',   'feats dim', self.feats_dim)
+    printf('%-25s = %.2e\n', 'regularization strength', self.reg)
+    printf('%-25s = %d\n',   'minibatch size', self.batch_size)
+    printf('%-25s = %.2e\n', 'learning rate', self.learning_rate)
+    printf('%-25s = %s\n',   'model structure', self.structure)
+
+end
+
+-- Serialization
+function Trainer:save(path)
+    local config = {
+        batch_size    = self.batch_size,
+        emb_vecs      = self.emb_vecs:float(),
+        learning_rate = self.learning_rate,
+        mem_dim       = self.mem_dim,
+        reg           = self.reg,
+        structure     = self.structure,
+        task          = self.task,
+        feats_dim     = self.feats_dim,
+    }
+
+    torch.save(path, {
+        params = self.params,
+        config = config,
+    })
 end
