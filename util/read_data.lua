@@ -10,8 +10,8 @@
 
 --]]
 
-function utils.load_embedding(vocab, uniform_val)
-    local emb_prefix = '../data/glove/glove.840B'
+function utils.load_embedding(dir, vocab, uniform_val)
+    local emb_prefix = dir .. '/glove/glove.840B'
     local emb_vocab = utils.Vocab(emb_prefix .. '.vocab')
     local emb_vecs = torch.load(emb_prefix .. '.300d.th')
     local emb_dim = emb_vecs:size(2)
@@ -141,6 +141,20 @@ function utils.read_tree(parents, labels)
         end
     end
     return root
+end
+
+function utils.read_dataset(dir, vocab)
+    if string.find(dir, 'sick') then
+        return utils.read_sick_dataset(dir, vocab)
+    elseif string.find(dir, 'msrp') then
+        return utils.read_msrp_dataset(dir, vocab)
+    elseif string.find(dir, 'snli') then
+        return utils.read_snli_dataset(dir, vocab)
+    elseif string.find(dir, 'wqa') then
+        return utils.read_wqa_dataset(dir, vocab)
+    else
+        error('No such dataset!')
+    end
 end
 
 --[[
