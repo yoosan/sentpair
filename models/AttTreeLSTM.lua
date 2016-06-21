@@ -1,10 +1,3 @@
---
--- 
--- User: yoosan, SYSU Deep NLP group
--- Date: 15/12/10
--- Time: 17:14
-
---
 --[[
 
    Attention-based Child-Sum Tree-LSTM.

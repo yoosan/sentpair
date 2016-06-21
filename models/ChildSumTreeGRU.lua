@@ -1,8 +1,8 @@
---
---
--- User: yoosan, SYSU Deep NLP group
--- Date: 15/12/1
--- Time: 14:16
+--[[
+ - Author: yoosan, SYSUDNLP Group
+ - Date: 16/6/3, 2015.
+ - Licence MIT
+--]]
 
 --[[
 

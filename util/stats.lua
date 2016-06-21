@@ -90,7 +90,7 @@ end
 
 -- accuracy rate
 function stats.accuracy(x, y)
-    assert(x:size(1) == y:size(1), 'predictions should have the same size with ground truth')
+    assert(x:size(1) == y:size(1), '#predictions == #ground truth')
     return torch.eq(x, y):sum() / x:size(1)
 end
 
