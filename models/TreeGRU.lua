@@ -3,7 +3,7 @@
   Tree-GRU base class
 
 --]]
-local TreeGRU, parent = torch.class('advnn.TreeGRU', 'nn.Module')
+local TreeGRU, parent = torch.class('nn.TreeGRU', 'nn.Module')
 
 function TreeGRU:__init(config)
     parent.__init(self)

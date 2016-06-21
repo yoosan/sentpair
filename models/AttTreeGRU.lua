@@ -11,7 +11,7 @@
 
 --]]
 
-local AttTreeGRU, parent = torch.class('attrnn.AttTreeGRU', 'attrnn.TreeGRU')
+local AttTreeGRU, parent = torch.class('nn.AttTreeGRU', 'nn.TreeGRU')
 
 function AttTreeGRU:__init(config)
     parent.__init(self, config)

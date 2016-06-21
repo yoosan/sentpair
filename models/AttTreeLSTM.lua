@@ -11,7 +11,7 @@
 
 --]]
 
-local AttTreeLSTM, parent = torch.class('attrnn.AttTreeLSTM', 'attrnn.TreeLSTM')
+local AttTreeLSTM, parent = torch.class('nn.AttTreeLSTM', 'nn.TreeLSTM')
 
 function AttTreeLSTM:__init(config)
     parent.__init(self, config)
@@ -32,9 +32,6 @@ function AttTreeLSTM:__init(config)
 
     -- task
     self.task = config.task or true
-    self.flag = config.flag or true
-
-    self.att_weights = {}
 end
 
 function AttTreeLSTM:new_composer()
@@ -47,10 +44,9 @@ function AttTreeLSTM:new_composer()
         nn.Linear(self.mem_dim, self.mem_dim, false)(atte_h)
     })
     local temp = nn.Linear(self.mem_dim, 1)(M)
-    local attention_weights =  nn.Transpose({1,2})(nn.SoftMax()(nn.Transpose({1,2})(temp)))
---    local attention_weights = (task == true)
---            and nn.Transpose({1,2})(nn.SoftMax()(nn.Transpose({1,2})(temp)))
---            or nn.Transpose({1,2})(nn.Sigmoid()(nn.Transpose({1,2})(temp)))
+    local attention_weights = (task == true)
+            and nn.Transpose({1,2})(nn.SoftMax()(nn.Transpose({1,2})(temp)))
+            or nn.Transpose({1,2})(nn.Sigmoid()(nn.Transpose({1,2})(temp)))
     local child_h_att = nn.MM(true, false)({ child_h, attention_weights })
     local child_h_sum = nn.Reshape(self.mem_dim)(child_h_att)
 
@@ -58,7 +54,7 @@ function AttTreeLSTM:new_composer()
         nn.Linear(self.in_dim, self.mem_dim)(input),
         nn.Linear(self.mem_dim, self.mem_dim)(child_h_sum)
     })
-    local f = nn.Sigmoid()(attrnn.CRowAddTable() {
+    local f = nn.Sigmoid()(abrnn.CRowAddTable() {
         nn.TemporalConvolution(self.mem_dim, self.mem_dim, 1)(child_h),
         nn.Linear(self.in_dim, self.mem_dim)(input),
     })
@@ -115,10 +111,6 @@ function AttTreeLSTM:forward(tree, inputs, attent)
     end
     self:allocate_module(tree, 'composer')
     tree.state = tree.composer:forward { inputs[tree.idx], child_c, child_h, att_input }
-    if self.flag == false then
-        local weights = tree.composer:findModules('nn.Transpose')[2].output
-        table.insert(self.att_weights, weights)
-    end
     child_h = nil
     child_c = nil
     att_input = nil
@@ -129,7 +121,6 @@ function AttTreeLSTM:forward(tree, inputs, attent)
             loss = loss + self.criterion:forward(tree.output, tree.gold_label)
         end
     end
---    print(tree.state)
     return tree.state, loss
 end
 
@@ -182,7 +173,6 @@ function AttTreeLSTM:clean(tree)
     for i = 1, tree.num_children do
         self:clean(tree.children[i])
     end
-    self.att_weights = {}
 end
 
 function AttTreeLSTM:parameters()

@@ -10,7 +10,7 @@
 
 --]]
 
-local ChildSumTreeGRU, parent = torch.class('attrnn.ChildSumTreeGRU', 'attrnn.TreeGRU')
+local ChildSumTreeGRU, parent = torch.class('nn.ChildSumTreeGRU', 'nn.TreeGRU')
 
 function ChildSumTreeGRU:__init(config)
     parent.__init(self, config)

@@ -4,7 +4,7 @@
 
 --]]
 
-local ChildSumTreeLSTM, parent = torch.class('attrnn.ChildSumTreeLSTM', 'attrnn.TreeLSTM')
+local ChildSumTreeLSTM, parent = torch.class('nn.ChildSumTreeLSTM', 'nn.TreeLSTM')
 
 function ChildSumTreeLSTM:__init(config)
     parent.__init(self, config)

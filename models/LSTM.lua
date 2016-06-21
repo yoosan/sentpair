@@ -10,7 +10,7 @@
 
 --]]
 
-local LSTM, parent = torch.class('advnn.LSTM', 'nn.Module')
+local LSTM, parent = torch.class('nn.LSTM', 'nn.Module')
 
 function LSTM:__init(config)
   parent.__init(self)

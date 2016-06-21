@@ -8,6 +8,8 @@ require('lfs')
 
 advnn = {}
 stats = {}
+printf = utils.printf
+utils = {}
 
 torch.setnumthreads(16)
 
@@ -26,8 +28,6 @@ include('models/AttTreeGRU.lua')
 include('models/AttTreeLSTM.lua')
 
 -- global paths (modify if desired)
-printf = utils.printf
-utils = {}
 utils.data_dir        = 'data'
 utils.models_dir      = 'trained_models'
 utils.predictions_dir = 'predictions'

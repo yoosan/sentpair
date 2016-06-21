@@ -10,7 +10,7 @@
 
 --]]
 
-local GRU, parent = torch.class('advnn.GRU', 'nn.Module')
+local GRU, parent = torch.class('nn.GRU', 'nn.Module')
 
 
 function GRU:__init(config)

@@ -4,6 +4,36 @@
 
 --]]
 
+--[[
+
+   Load word embedding
+
+--]]
+
+function utils.load_embedding(vocab, uniform_val)
+    local emb_prefix = '../data/glove/glove.840B'
+    local emb_vocab = utils.Vocab(emb_prefix .. '.vocab')
+    local emb_vecs = torch.load(emb_prefix .. '.300d.th')
+    local emb_dim = emb_vecs:size(2)
+    local num_unk = 0
+    uniform_val = uniform_val or 0.05
+    local vecs = torch.Tensor(vocab.size, emb_dim)
+    for i = 1, vocab.size do
+        local w = vocab:token(i)
+        if emb_vocab:contains(w) then
+            vecs[i] = emb_vecs[emb_vocab:index(w)]
+        else
+            num_unk = num_unk + 1
+            vecs[i] = vecs[i]:uniform(-uniform_val, uniform_val)
+        end
+    end
+    print('unknown words count = ' .. num_unk)
+    emb_vecs = nil
+    emb_vocab = nil
+    collectgarbage()
+    return vecs
+end
+
 function utils.read_embedding(vocab_path, emb_path)
     local vocab = utils.Vocab(vocab_path)
     local embedding = torch.load(emb_path)

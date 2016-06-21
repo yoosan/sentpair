@@ -4,7 +4,7 @@
 
 --]]
 
-local TreeLSTM, parent = torch.class('advnn.TreeLSTM', 'nn.Module')
+local TreeLSTM, parent = torch.class('nn.TreeLSTM', 'nn.Module')
 
 function TreeLSTM:__init(config)
   parent.__init(self)

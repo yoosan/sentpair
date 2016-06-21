@@ -8,7 +8,7 @@
 
 --]]
 
-local CRowAddTable, parent = torch.class('attrnn.CRowAddTable', 'nn.Module')
+local CRowAddTable, parent = torch.class('nn.CRowAddTable', 'nn.Module')
 
 function CRowAddTable:__init()
    parent.__init(self)
