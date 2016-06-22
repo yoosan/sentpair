@@ -1,10 +1,4 @@
 --[[
- - Author: yoosan, SYSUDNLP Group
- - Date: 16/6/3, 2015.
- - Licence MIT
---]]
-
---[[
 
  Long Short-Term Memory. (http://arxiv.org/pdf/1410.4615v3.pdf)
 

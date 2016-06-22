@@ -9,9 +9,8 @@ local Trainer = torch.class('Trainer')
 function Trainer:__init(config)
     self.task          = config.task          or 'SICK' -- SICK, SNLI, MSRP, WQA
     self.mem_dim       = config.mem_dim       or 150
-    self.learning_rate = config.learning_rate or 0.05
+    self.learning_rate = config.lr            or 0.05
     self.batch_size    = config.batch_size    or 25
-    self.num_layers    = config.num_layers    or 1
     self.reg           = config.reg           or 1e-4
     self.structure     = config.structure     or 'lstm' -- gru, treelstm, treegru, atreelstm, atreegru
     self.feats_dim     = config.feats_dim     or 50
@@ -23,7 +22,7 @@ function Trainer:__init(config)
     -- optimizer config
     self.optim_func = config.optim_func or optim.adagrad
     self.optim_state = {
-        learning_rate = self.learning_rate,
+        learningRate = self.learning_rate,
 
     }
 
@@ -72,8 +71,6 @@ function Trainer:__init(config)
         error('Invalid structure.')
     end
 
-    share_params(self.rmodel, self.lmodel)
-
     -- output module
     self.output_module = self:new_output_module()
 
@@ -87,9 +84,8 @@ function Trainer:__init(config)
         self.modules:add(self.model):add(self.latt)
     end
     self.modules:add(self.output_module)
-
     self.params, self.grad_params = self.modules:getParameters()
-
+    share_params(self.rmodel, self.lmodel)
 end
 
 function Trainer:new_output_module()
@@ -113,6 +109,7 @@ function Trainer:new_output_module()
                         :add(nn.Sigmoid())
                         :add(nn.Linear(self.feats_dim, self.num_classes))
                         :add(classifier)
+--    print(out_module)
     return out_module
 end
 
@@ -207,7 +204,7 @@ function Trainer:train(dataset)
             self.grad_params:add(self.reg, self.params)
             return loss, self.grad_params
         end
-        self.optim_func(feval, self.params, self.optim_state)
+        optim.adagrad(feval, self.params, self.optim_state)
     end
     xlua.progress(dataset.size, dataset.size)
 end
@@ -222,100 +219,57 @@ function Trainer:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
     self.rmodel:backward(rinputs, rgrad)
 end
 
-function Trainer:eval(dataset)
+function Trainer:predict(lsent, rsent, ltree, rtree)
     self.modules:evaluate()
+    local linputs = self.emb_vecs:index(1, lsent:long()):double()
+    local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+
+    local inputs
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        inputs = {self.lmodel:forward(linputs), self.rmodel:forward(rinputs)}
+        self.lmodel:forget()
+        self.rmodel:forget()
+    elseif self.sturcture == 'treelstm' or self.sturcture == 'treegru' then
+        inputs = {
+            self.model:forward(ltree, linputs),
+            self.model:forward(rtree, rinputs)
+        }
+        self.model:clean(ltree)
+        self.model:clean(rtree)
+    else
+        local seq_lrep = self.latt:forward(linputs)
+        local seq_rrep = self.ratt:forward(rinputs)
+        inputs = {
+            self.model:forward(ltree, linputs, seq_lrep),
+            self.model:forward(rtree, rinputs, seq_rrep)
+        }
+        self.model:clean(ltree)
+        self.model:clean(rtree)
+        self.latt:forget()
+        self.ratt:forget()
+    end
+    local output = self.output_module:forward(inputs)
+    if self.task == 'SICK' then
+        return torch.range(1, 5):dot(output:exp())
+    else
+        return stats.argmax(output)
+    end
+end
+
+function Trainer:eval(dataset)
     local predictions = torch.zeros(dataset.size)
     for i = 1, dataset.size do
         xlua.progress(i, dataset.size)
         local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
         local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
-        local linputs = self.emb_vecs:index(1, lsent:long()):double()
-        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
-        local lrep, rrep, seq_lrep, seq_rrep
-        if self.structure == 'lstm' or self.structure == 'gru' then
-            lrep = self.lmodel:forward(linputs)
-            rrep = self.rmodel:forward(rinputs)
-            self.lmodel:forget()
-            self.rmodel:forget()
-        elseif self.sturcture == 'treelstm' or self.sturcture == 'treegru' then
-            lrep = self.model:forward(ltree, linputs)
-            rrep = self.model:forward(rtree, rinputs)
-            self.model:clean(ltree)
-            self.model:clean(rtree)
-        else
-            seq_lrep = self.latt:forward(linputs)
-            seq_rrep = self.ratt:forward(rinputs)
-            lrep = self.model:forward(ltree, linputs, seq_lrep)
-            rrep = self.model:forward(rtree, rinputs, seq_rrep)
-            self.model:clean(ltree)
-            self.model:clean(rtree)
-            self.latt:forget()
-            self.ratt:forget()
-        end
-        local output = self.output_module:forward({lrep, rrep})
-        predictions[i] = stats.argmax(output)
+        predictions[i] = self:predict(lsent, rsent, ltree, rtree)
     end
     return predictions
 end
 
-function Trainer:run(n_epoches, dset_train, dset_dev, dset_test)
-    header('Training model ... ')
-    local train_start = sys.clock()
-    local best_score = -1.0
-    local best_params
-    for i = 1, n_epoches do
-        local start = sys.clock()
-        printf('-- epoch %d \n', i)
-        self:train(dset_train)
-        printf('-- finished epoch in %.2fs\n', sys.clock() - start)
-        local predictions = self:eval(dset_dev)
-        local dev_score
-        if self.task == 'SICK' then
-            local pearson_score = stats.pearson(predictions, dset_dev.labels)
-            local spearman_score = stats.spearmanr(predictions, dset_dev.labels)
-            local mse_score = stats.mse(predictions, dset_dev.labels)
-            printf('-- Dev pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
-                pearson_score, spearman_score, mse_score)
-            dev_score = pearson_score
-        elseif self.task == 'MSRP' then
-            local accuracy = stats.accuracy(predictions, dset_dev.labels)
-            local f1 = stats.f1(predictions, dset_dev.labels)
-            printf('-- Dev accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
-            dev_score = accuracy
-        else
-            local accuracy = stats.accuracy(predictions, dset_dev.labels)
-            printf('-- Dev accuracy = %.4f \n', accuracy)
-            dev_score = accuracy
-        end
-        if dev_score > best_score then
-            best_score = dev_score
-            best_params = self.params
-        end
-    end
-    printf('finished training in %.2fs\n', sys.clock() - train_start)
-    header('Evaluating on test set')
-    printf('-- using model with dev score = %.4f\n', best_score)
-    self.params = best_params
-    local test_preds = self:eval(dset_test)
-    if self.task == 'SICK' then
-        local pearson_score = stats.pearson(test_preds, dset_test.labels)
-        local spearman_score = stats.spearmanr(test_preds, dset_test.labels)
-        local mse_score = stats.mse(test_preds, dset_test.labels)
-        printf('-- Test pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
-            pearson_score, spearman_score, mse_score)
-    elseif self.task == 'MSRP' then
-        local accuracy = stats.accuracy(test_preds, dset_test.labels)
-        local f1 = stats.f1(test_preds, dset_test.labels)
-        printf('-- Test accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
-    else
-        local accuracy = stats.accuracy(test_preds, dset_test.labels)
-        printf('-- Test accuracy = %.4f \n', accuracy)
-    end
-end
-
 function Trainer:print_config()
     local num_params = self.params:nElement()
-    local num_output_params = self:new_output_module():getParameters():nElement()
+    local num_output_params = self.output_module:getParameters():nElement()
     printf('%-25s = %s\n',   'running task', self.task)
     printf('%-25s = %d\n',   'num params', num_params)
     printf('%-25s = %d\n',   'num compositional params', num_params - num_output_params)

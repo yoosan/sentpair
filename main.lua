@@ -32,6 +32,62 @@ printf('number of train = %d\n', dset_train.size)
 printf('number of dev   = %d\n', dset_dev.size)
 printf('number of test  = %d\n', dset_test.size)
 
+-- train and evaluate
 local trainer = Trainer(config)
-trainer:train(dset_train)
+function run(trainer, n_epoches, dset_train, dset_dev, dset_test)
+    header('Training model ... ')
+    local train_start = sys.clock()
+    local best_score = -1.0
+    local best_params
+    local best_trainer = trainer
+    for i = 1, n_epoches do
+        local start = sys.clock()
+        printf('-- epoch %d \n', i)
+        trainer:train(dset_train)
+        printf('-- finished epoch in %.2fs\n', sys.clock() - start)
+        local predictions = trainer:eval(dset_dev)
+        local dev_score
+        if trainer.task == 'SICK' then
+            local pearson_score = stats.pearson(predictions, dset_dev.labels)
+            local spearman_score = stats.spearmanr(predictions, dset_dev.labels)
+            local mse_score = stats.mse(predictions, dset_dev.labels)
+            printf('-- Dev pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
+                pearson_score, spearman_score, mse_score)
+            dev_score = pearson_score
+        elseif trainer.task == 'MSRP' then
+            local accuracy = stats.accuracy(predictions, dset_dev.labels)
+            local f1 = stats.f1(predictions, dset_dev.labels)
+            printf('-- Dev accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
+            dev_score = accuracy
+        else
+            local accuracy = stats.accuracy(predictions, dset_dev.labels)
+            printf('-- Dev accuracy = %.4f \n', accuracy)
+            dev_score = accuracy
+        end
+        if dev_score > best_score then
+            best_score = dev_score
+            best_trainer.params:copy(trainer.params)
+        end
+    end
+    printf('finished training in %.2fs\n', sys.clock() - train_start)
+    header('Evaluating on test set')
+    printf('-- using model with dev score = %.4f\n', best_score)
+    local test_preds = best_trainer:eval(dset_test)
+    if trainer.task == 'SICK' then
+        local pearson_score = stats.pearson(test_preds, dset_test.labels)
+        local spearman_score = stats.spearmanr(test_preds, dset_test.labels)
+        local mse_score = stats.mse(test_preds, dset_test.labels)
+        printf('-- Test pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
+            pearson_score, spearman_score, mse_score)
+    elseif trainer.task == 'MSRP' then
+        local accuracy = stats.accuracy(test_preds, dset_test.labels)
+        local f1 = stats.f1(test_preds, dset_test.labels)
+        printf('-- Test accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
+    else
+        local accuracy = stats.accuracy(test_preds, dset_test.labels)
+        printf('-- Test accuracy = %.4f \n', accuracy)
+    end
+end
+
+run(trainer, config.n_epoches, dset_train, dset_dev, dset_test)
 
