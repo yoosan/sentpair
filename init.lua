@@ -26,8 +26,8 @@ include('models/ChildSumTreeLSTM.lua')
 include('models/ChildSumTreeGRU.lua')
 include('models/AttTreeGRU.lua')
 include('models/AttTreeLSTM.lua')
+include('train/Tester.lua')
 include('train/Trainer.lua')
-
 -- global paths (modify if desired)
 utils.data_dir        = 'data'
 utils.models_dir      = 'trained_models'

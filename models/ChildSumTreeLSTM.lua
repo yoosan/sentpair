@@ -36,7 +36,7 @@ function ChildSumTreeLSTM:new_composer()
             nn.Linear(self.mem_dim, self.mem_dim)(child_h_sum)
         })
     local f = nn.Sigmoid()(
-        attrnn.CRowAddTable(){
+        nn.CRowAddTable(){
             nn.TemporalConvolution(self.mem_dim, self.mem_dim, 1)(child_h),
             nn.Linear(self.in_dim, self.mem_dim)(input),
         })
@@ -95,7 +95,7 @@ function ChildSumTreeLSTM:forward(tree, inputs)
             loss = loss + self.criterion:forward(tree.output, tree.gold_label)
         end
     end
-    return tree.state[2], loss
+    return tree.state, loss
 end
 
 function ChildSumTreeLSTM:backward(tree, inputs, grad)

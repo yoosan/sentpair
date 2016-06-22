@@ -1,10 +1,3 @@
---
---
--- User: yoosan, SYSU Deep NLP group
--- Date: 15/12/1
--- Time: 14:16
-
---
 --[[
 
    Attention-based Child-Sum Tree-GRU.

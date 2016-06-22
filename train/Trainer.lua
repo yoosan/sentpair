@@ -1,19 +1,20 @@
 --[[
- - Author: yoosan, SYSUDNLP Group
- - Date: 10/21/15, 2015.
- - Licence MIT
+
+  Semantic relatedness prediction using LSTMs.
+
 --]]
 
 local Trainer = torch.class('Trainer')
 
 function Trainer:__init(config)
-    self.task          = config.task          or 'SICK' -- SICK, SNLI, MSRP, WQA
-    self.mem_dim       = config.mem_dim       or 150
-    self.learning_rate = config.lr            or 0.05
-    self.batch_size    = config.batch_size    or 25
-    self.reg           = config.reg           or 1e-4
-    self.structure     = config.structure     or 'lstm' -- gru, treelstm, treegru, atreelstm, atreegru
-    self.feats_dim     = config.feats_dim     or 50
+    self.task           = config.task           or 'SICK'
+    self.mem_dim        = config.mem_dim        or 150
+    self.learning_rate  = config.learning_rate  or 0.05
+    self.batch_size     = config.batch_size     or 25
+    self.num_layers     = config.num_layers     or 1
+    self.reg            = config.reg            or 1e-4
+    self.structure      = config.structure      or 'lstm' -- {lstm, bilstm}
+    self.feats_dim      = config.feats_dim      or 50
 
     -- word embedding
     self.emb_vecs = config.emb_vecs
@@ -23,7 +24,6 @@ function Trainer:__init(config)
     self.optim_func = config.optim_func or optim.adagrad
     self.optim_state = {
         learningRate = self.learning_rate,
-
     }
 
     -- number of classes and criterion
@@ -40,10 +40,11 @@ function Trainer:__init(config)
         error('No such task! The tasks are SICK, SNLI, MSRP and WQA')
     end
 
-    -- model for training
+    -- initialize model
     local model_config = {
         in_dim = self.emb_dim,
         mem_dim = self.mem_dim,
+        num_layers = self.num_layers,
         gate_output = false,
     }
 
@@ -61,62 +62,87 @@ function Trainer:__init(config)
         self.model = nn.AttTreeLSTM(model_config)
         self.latt = nn.LSTM(model_config)
         self.ratt = nn.LSTM(model_config)
-        share_params(self.ratt, self.latt)
     elseif self.structure == 'atreegru' then
         self.model = nn.AttTreeGRU(model_config)
         self.latt = nn.GRU(model_config)
         self.ratt = nn.GRU(model_config)
-        share_params(self.ratt, self.latt)
     else
-        error('Invalid structure.')
+        error('invalid model type: ' .. self.structure)
     end
 
     -- output module
     self.output_module = self:new_output_module()
-
-    -- parameters for training
-    self.modules = nn.Parallel()
+    local modules = nn.Parallel()
     if self.structure == 'lstm' or self.structure == 'gru' then
-        self.modules:add(self.lmodel)
+        modules:add(self.lmodel)
     elseif self.structure == 'treelstm' or self.structure == 'treegru' then
-        self.modules:add(self.model)
+        modules:add(self.model)
     else
-        self.modules:add(self.model):add(self.latt)
+        modules:add(self.model):add(self.latt)
     end
-    self.modules:add(self.output_module)
-    self.params, self.grad_params = self.modules:getParameters()
-    share_params(self.rmodel, self.lmodel)
+    modules:add(self.output_module)
+    self.params, self.grad_params = modules:getParameters()
+
+    -- share must only be called after getParameters, since this changes the
+    -- location of the parameters
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        share_params(self.rmodel, self.lmodel)
+    elseif self.structure == 'atreelstm' or self.structure == 'atreegru' then
+        share_params(self.ratt, self.latt)
+    end
 end
 
 function Trainer:new_output_module()
-    local lrep = nn.Identity()()
-    local rrep = nn.Identity()()
-    local mul_dist = nn.CMulTable(){lrep, rrep}
-    local sub_dist = nn.Abs()(nn.CSubTable(){lrep, rrep})
-    local rep_dist_feats = nn.JoinTable(1){mul_dist, sub_dist}
-    local feats = nn.gModule({lrep, rrep}, {rep_dist_feats})
+    local lvec, rvec, inputs, input_dim
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        -- standard (left-to-right) LSTM
+        input_dim = 2 * self.num_layers * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        if self.num_layers == 1 then
+            lvec, rvec = linput, rinput
+        else
+            lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+        end
+        inputs = { linput, rinput }
+    else
+        input_dim = 2 * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        lvec, rvec = linput, rinput
+        inputs = { linput, rinput }
+    end
+    local mult_dist = nn.CMulTable() { lvec, rvec }
+    local add_dist = nn.Abs()(nn.CSubTable() { lvec, rvec })
+    local vec_dist_feats = nn.JoinTable(1) { mult_dist, add_dist }
+    local vecs_to_input = nn.gModule(inputs, { vec_dist_feats })
 
-    -- output module, feed feats to the classifier
+    -- define similarity model architecture
     local classifier
     if self.task == 'MSRP' or self.task == 'WQA' then
         classifier = nn.Sigmoid()
     elseif self.task == 'SICK' or self.task == 'SNLI' then
         classifier = nn.LogSoftMax()
     end
-    local out_module = nn.Sequential()
-                        :add(feats)
-                        :add(nn.Linear(2 * self.mem_dim, self.feats_dim))
-                        :add(nn.Sigmoid())
-                        :add(nn.Linear(self.feats_dim, self.num_classes))
-                        :add(classifier)
---    print(out_module)
-    return out_module
+    local output_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.Linear(input_dim, self.feats_dim))
+    :add(nn.Sigmoid())
+    :add(nn.Linear(self.feats_dim, self.num_classes))
+    :add(classifier)
+    return output_module
 end
 
 function Trainer:train(dataset)
-    self.modules:training()
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        self.lmodel:training()
+        self.rmodel:training()
+    elseif self.structure == 'treelstm' or self.structure == 'treegru' then
+        self.model:training()
+    else
+        self.model:training()
+        self.latt:training()
+        self.ratt:training()
+    end
 
-    -- shuffle the dataset
     local indices = torch.randperm(dataset.size)
     local zeros = torch.zeros(self.mem_dim)
     for i = 1, dataset.size, self.batch_size do
@@ -142,7 +168,6 @@ function Trainer:train(dataset)
                 targets[{j, label}] = 1
             end
         end
-
         local feval = function(x)
             self.grad_params:zero()
             local loss = 0
@@ -153,49 +178,63 @@ function Trainer:train(dataset)
                 local linputs = self.emb_vecs:index(1, lsent:long()):double()
                 local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
-                -- forward and get representations of the sent pair
-                local lrep, rrep, seq_lrep, seq_rrep
+                -- get sentence representations
+                local inputs, l_seqrep, r_seqrep
                 if self.structure == 'lstm' or self.structure == 'gru' then
-                    lrep = self.lmodel:forward(linputs)
-                    rrep = self.rmodel:forward(rinputs)
-                elseif self.sturcture == 'treelstm' or self.sturcture == 'treegru' then
-                    lrep = self.model:forward(ltree, linputs)
-                    rrep = self.model:forward(rtree, rinputs)
+                    inputs = {
+                        self.lmodel:forward(linputs),
+                        self.rmodel:forward(rinputs)
+                    }
+                elseif self.structure == 'treelstm' then
+                    inputs = {
+                        self.model:forward(ltree, linputs)[2],
+                        self.model:forward(rtree, rinputs)[2]
+                    }
+                elseif self.structure == 'treegru' then
+                    inputs = {
+                        self.model:forward(ltree, linputs),
+                        self.model:forward(rtree, rinputs)
+                    }
+                elseif self.structure == 'atreelstm' then
+                    l_seqrep = self.latt:forward(linputs)
+                    r_seqrep = self.ratt:forward(rinputs)
+                    inputs = {
+                        self.model:forward(ltree, linputs, l_seqrep)[2],
+                        self.model:forward(rtree, rinputs, r_seqrep)[2]
+                    }
                 else
-                    seq_lrep = self.latt:forward(linputs)
-                    seq_rrep = self.ratt:forward(rinputs)
-                    lrep = self.model:forward(ltree, linputs, seq_lrep)
-                    rrep = self.model:forward(rtree, rinputs, seq_rrep)
+                    l_seqrep = self.latt:forward(linputs)
+                    r_seqrep = self.ratt:forward(rinputs)
+                    inputs = {
+                        self.model:forward(ltree, linputs, l_seqrep),
+                        self.model:forward(rtree, rinputs, r_seqrep)
+                    }
                 end
+                -- compute relatedness
+                local output = self.output_module:forward(inputs)
 
-                -- feed to the output module and compute loss
-                local output = self.output_module:forward({lrep, rrep})
+                -- compute loss and backpropagate
                 local example_loss = self.criterion:forward(output, targets[j])
                 loss = loss + example_loss
-
-                -- backward
                 local out_grad = self.criterion:backward(output, targets[j])
-                local rep_grads = self.output_module:backward({lrep, rrep}, out_grad)
-                local lrep_grad, rrep_grad = rep_grads[1], rep_grads[2]
-
-                -- backward grads of representation
+                local rep_grad = self.output_module:backward(inputs, out_grad)
                 if self.structure == 'lstm' or self.structure == 'gru' then
-                    self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grads)
+                    self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
                 elseif self.sturcture == 'treegru' then
-                    self.model:backward(ltree, linputs, lrep_grad)
-                    self.model:backward(rtree, rinputs, rrep_grad)
+                    self.model:backward(ltree, linputs, rep_grad[1])
+                    self.model:backward(rtree, rinputs, rep_grad[2])
                 elseif self.structure == 'treelstm' then
-                    self.model:backward(ltree, linputs, {zeros, lrep_grad})
-                    self.model:backward(rtree, rinputs, {zeros, rrep_grad})
+                    self.model:backward(ltree, linputs, {zeros, rep_grad[1]})
+                    self.model:backward(rtree, rinputs, {zeros, rep_grad[2]})
                 elseif self.structure == 'atreegru' then
-                    self.model:backward(ltree, linputs, seq_lrep, lrep_grad)
-                    self.model:backward(rtree, rinputs, seq_rrep, rrep_grad)
+                    self.model:backward(ltree, linputs, l_seqrep, rep_grad[1])
+                    self.model:backward(rtree, rinputs, r_seqrep, rep_grad[2])
                 elseif self.structure == 'atreelstm' then
-                    self.model:backward(ltree, linputs, seq_lrep, {zeros, lrep_grad})
-                    self.model:backward(rtree, rinputs, seq_rrep, {zeros, rrep_grad})
+                    self.model:backward(ltree, linputs, l_seqrep, {zeros, rep_grad[1]})
+                    self.model:backward(rtree, rinputs, r_seqrep, {zeros, rep_grad[2]})
                 end
-
             end
+
             loss = loss / batch_size
             self.grad_params:div(batch_size)
 
@@ -204,51 +243,84 @@ function Trainer:train(dataset)
             self.grad_params:add(self.reg, self.params)
             return loss, self.grad_params
         end
+
         optim.adagrad(feval, self.params, self.optim_state)
     end
     xlua.progress(dataset.size, dataset.size)
 end
 
+-- LSTM backward propagation
 function Trainer:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
     local lgrad, rgrad
-    lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
-    rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
-    lgrad[lsent:nElement()] = rep_grad[1]
-    rgrad[rsent:nElement()] = rep_grad[2]
+    if self.num_layers == 1 then
+        lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
+        rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
+        lgrad[lsent:nElement()] = rep_grad[1]
+        rgrad[rsent:nElement()] = rep_grad[2]
+    else
+        lgrad = torch.zeros(lsent:nElement(), self.num_layers, self.mem_dim)
+        rgrad = torch.zeros(rsent:nElement(), self.num_layers, self.mem_dim)
+        for l = 1, self.num_layers do
+            lgrad[{ lsent:nElement(), l, {} }] = rep_grad[1][l]
+            rgrad[{ rsent:nElement(), l, {} }] = rep_grad[2][l]
+        end
+    end
     self.lmodel:backward(linputs, lgrad)
     self.rmodel:backward(rinputs, rgrad)
 end
 
+-- Predict the similarity of a sentence pair.
 function Trainer:predict(lsent, rsent, ltree, rtree)
-    self.modules:evaluate()
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        self.lmodel:evaluate()
+        self.rmodel:evaluate()
+    elseif self.structure == 'treelstm' or self.structure == 'treegru' then
+        self.model:evaluate()
+    else
+        self.model:evaluate()
+        self.latt:evaluate()
+        self.ratt:evaluate()
+    end
     local linputs = self.emb_vecs:index(1, lsent:long()):double()
     local rinputs = self.emb_vecs:index(1, rsent:long()):double()
-
     local inputs
+    local inputs, l_seqrep, r_seqrep
     if self.structure == 'lstm' or self.structure == 'gru' then
-        inputs = {self.lmodel:forward(linputs), self.rmodel:forward(rinputs)}
-        self.lmodel:forget()
-        self.rmodel:forget()
-    elseif self.sturcture == 'treelstm' or self.sturcture == 'treegru' then
+        inputs = {
+            self.lmodel:forward(linputs),
+            self.rmodel:forward(rinputs)
+        }
+    elseif self.structure == 'treelstm' then
+        inputs = {
+            self.model:forward(ltree, linputs)[2],
+            self.model:forward(rtree, rinputs)[2]
+        }
+    elseif self.structure == 'treegru' then
         inputs = {
             self.model:forward(ltree, linputs),
             self.model:forward(rtree, rinputs)
         }
+    else
+        l_seqrep = self.latt:forward(linputs)
+        r_seqrep = self.ratt:forward(rinputs)
+        inputs = {
+            self.model:forward(ltree, linputs, l_seqrep),
+            self.model:forward(rtree, rinputs, r_seqrep)
+        }
+    end
+    local output = self.output_module:forward(inputs)
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        self.lmodel:forget()
+        self.rmodel:forget()
+    elseif self.structure == 'treelstm' or self.structure == 'treegru' then
         self.model:clean(ltree)
         self.model:clean(rtree)
     else
-        local seq_lrep = self.latt:forward(linputs)
-        local seq_rrep = self.ratt:forward(rinputs)
-        inputs = {
-            self.model:forward(ltree, linputs, seq_lrep),
-            self.model:forward(rtree, rinputs, seq_rrep)
-        }
         self.model:clean(ltree)
         self.model:clean(rtree)
         self.latt:forget()
         self.ratt:forget()
     end
-    local output = self.output_module:forward(inputs)
     if self.task == 'SICK' then
         return torch.range(1, 5):dot(output:exp())
     else
@@ -256,44 +328,48 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
     end
 end
 
+-- Produce similarity predictions for each sentence pair in the dataset.
 function Trainer:eval(dataset)
-    local predictions = torch.zeros(dataset.size)
+    local predictions = torch.Tensor(dataset.size)
     for i = 1, dataset.size do
         xlua.progress(i, dataset.size)
         local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
-        local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
-        predictions[i] = self:predict(lsent, rsent, ltree, rtree)
+        if self.structure == 'lstm' or self.structure == 'gru' then
+            predictions[i] = self:predict(lsent, rsent)
+        else
+            local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
+            predictions[i] = self:predict(lsent, rsent, ltree, rtree)
+        end
     end
     return predictions
 end
 
 function Trainer:print_config()
     local num_params = self.params:nElement()
-    local num_output_params = self.output_module:getParameters():nElement()
-    printf('%-25s = %s\n',   'running task', self.task)
-    printf('%-25s = %d\n',   'num params', num_params)
-    printf('%-25s = %d\n',   'num compositional params', num_params - num_output_params)
-    printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
-    printf('%-25s = %d\n',   'memory dim', self.mem_dim)
-    printf('%-25s = %d\n',   'feats dim', self.feats_dim)
+    local num_sim_params = self:new_output_module():getParameters():nElement()
+    printf('%-25s = %d\n', 'num params', num_params)
+    printf('%-25s = %d\n', 'num compositional params', num_params - num_sim_params)
+    printf('%-25s = %d\n', 'word vector dim', self.emb_dim)
+    printf('%-25s = %d\n', 'LSTM memory dim', self.mem_dim)
     printf('%-25s = %.2e\n', 'regularization strength', self.reg)
-    printf('%-25s = %d\n',   'minibatch size', self.batch_size)
+    printf('%-25s = %d\n', 'minibatch size', self.batch_size)
     printf('%-25s = %.2e\n', 'learning rate', self.learning_rate)
-    printf('%-25s = %s\n',   'model structure', self.structure)
-
+    printf('%-25s = %s\n', 'LSTM structure', self.structure)
+    printf('%-25s = %d\n', 'LSTM layers', self.num_layers)
+    printf('%-25s = %d\n', 'sim module hidden dim', self.feats_dim)
 end
 
 -- Serialization
 function Trainer:save(path)
     local config = {
-        batch_size    = self.batch_size,
-        emb_vecs      = self.emb_vecs:float(),
+        batch_size = self.batch_size,
+        emb_vecs = self.emb_vecs:float(),
         learning_rate = self.learning_rate,
-        mem_dim       = self.mem_dim,
-        reg           = self.reg,
-        structure     = self.structure,
-        task          = self.task,
-        feats_dim     = self.feats_dim,
+        num_layers = self.num_layers,
+        mem_dim = self.mem_dim,
+        sim_nhidden = self.sim_nhidden,
+        reg = self.reg,
+        structure = self.structure,
     }
 
     torch.save(path, {

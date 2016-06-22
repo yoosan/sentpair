@@ -77,13 +77,14 @@ function GRU:new_cell()
         local p2 = nn.CMulTable()({ z, h_p })
 
         local next_h = nn.CAddTable()({ p1, p2 })
+
         htable[layer] = next_h
     end
 
     -- if GRU is single-layered, this makes htable/ctable Tensors (instead of tables).
     -- this avoids some quirks with nngraph involving tables of size 1.
-    htable = nn.Identity()(htable)
-    local cell = nn.gModule({ input, htable_p }, { htable })
+    --    htable = nn.Identity()(htable)
+    local cell = nn.gModule({ input, htable_p }, htable)
 
     -- share parameters
     if self.master_cell then

@@ -164,7 +164,6 @@ end
 --]]
 
 function utils.read_sick_dataset(dir, vocab)
-    print('loading SICK dataset ...')
     local dataset = {}
     dataset.vocab = vocab
     dataset.ltrees = utils.read_trees(dir .. 'a.parents')
@@ -191,7 +190,6 @@ end
 
 --]]
 function utils.read_snli_dataset(dir, vocab)
-    print('loading Stanford NLI dataset ...')
     local dataset = {}
     dataset.vocab = vocab
     dataset.ltrees = utils.read_trees(dir .. 'a.parents')
@@ -216,7 +214,6 @@ end
 --]]
 
 function utils.read_msrp_dataset(dir, vocab)
-    print('loading MSR paraphrase dataset ...')
     local dataset = {}
     dataset.vocab = vocab
     dataset.ltrees = utils.read_trees(dir .. 'a.parents')
@@ -240,7 +237,6 @@ end
 --]]
 
 function utils.read_wqa_dataset(dir, vocab)
-    print('loading WikiQA dataset ...')
     local dataset = {}
     dataset.vocab = vocab
     dataset.ltrees = utils.read_trees(dir .. 'a.parents')
