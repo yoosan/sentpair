@@ -162,6 +162,11 @@ function Trainer:train(dataset)
                     targets[{j, ceil}] = sim - floor
                 end
             end
+        elseif self.task == 'SNLI' then
+            for j = 1, batch_size do
+                local label = dataset.labels[indices[i + j - 1]]
+                targets[{j, 1}] = label
+            end
         else
             for j = 1, batch_size do
                 local label = dataset.labels[indices[i + j - 1]]
@@ -212,9 +217,9 @@ function Trainer:train(dataset)
                 end
                 -- compute relatedness
                 local output = self.output_module:forward(inputs)
-
                 -- compute loss and backpropagate
-                local example_loss = self.criterion:forward(output, targets[j])
+                local target = self.task == 'SNLI' and targets[j][1] or targets[j]
+                local example_loss = self.criterion:forward(output, target)
                 loss = loss + example_loss
                 local out_grad = self.criterion:backward(output, targets[j])
                 local rep_grad = self.output_module:backward(inputs, out_grad)
@@ -227,11 +232,17 @@ function Trainer:train(dataset)
                     self.model:backward(ltree, linputs, {zeros, rep_grad[1]})
                     self.model:backward(rtree, rinputs, {zeros, rep_grad[2]})
                 elseif self.structure == 'atreegru' then
-                    self.model:backward(ltree, linputs, l_seqrep, rep_grad[1])
-                    self.model:backward(rtree, rinputs, r_seqrep, rep_grad[2])
+                    local inputs_grad = {
+                        self.model:backward(ltree, linputs, l_seqrep, rep_grad[1])[2],
+                        self.model:backward(rtree, rinputs, r_seqrep, rep_grad[2])[2]
+                    }
+                    self:RNN_backward(lsent, rsent, linputs, rinputs, inputs_grad)
                 elseif self.structure == 'atreelstm' then
-                    self.model:backward(ltree, linputs, l_seqrep, {zeros, rep_grad[1]})
-                    self.model:backward(rtree, rinputs, r_seqrep, {zeros, rep_grad[2]})
+                    local inputs_grad = {
+                        self.model:backward(ltree, linputs, l_seqrep, {zeros, rep_grad[1]})[2],
+                        self.model:backward(rtree, rinputs, r_seqrep, {zeros, rep_grad[2]})[2]
+                    }
+                    self:RNN_backward(lsent, rsent, linputs, rinputs, inputs_grad)
                 end
             end
 
@@ -243,7 +254,6 @@ function Trainer:train(dataset)
             self.grad_params:add(self.reg, self.params)
             return loss, self.grad_params
         end
-
         optim.adagrad(feval, self.params, self.optim_state)
     end
     xlua.progress(dataset.size, dataset.size)
@@ -265,8 +275,13 @@ function Trainer:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
             rgrad[{ rsent:nElement(), l, {} }] = rep_grad[2][l]
         end
     end
-    self.lmodel:backward(linputs, lgrad)
-    self.rmodel:backward(rinputs, rgrad)
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        self.lmodel:backward(linputs, lgrad)
+        self.rmodel:backward(rinputs, rgrad)
+    else
+        self.latt:backward(linputs, lgrad)
+        self.ratt:backward(rinputs, rgrad)
+    end
 end
 
 -- Predict the similarity of a sentence pair.
@@ -347,16 +362,17 @@ end
 function Trainer:print_config()
     local num_params = self.params:nElement()
     local num_sim_params = self:new_output_module():getParameters():nElement()
-    printf('%-25s = %d\n', 'num params', num_params)
-    printf('%-25s = %d\n', 'num compositional params', num_params - num_sim_params)
-    printf('%-25s = %d\n', 'word vector dim', self.emb_dim)
-    printf('%-25s = %d\n', 'LSTM memory dim', self.mem_dim)
+    printf('%-25s = %s\n',   'running task', self.task)
+    printf('%-25s = %d\n',   'num params', num_params)
+    printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
+    printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
+    printf('%-25s = %d\n',   'model memory dim', self.mem_dim)
     printf('%-25s = %.2e\n', 'regularization strength', self.reg)
-    printf('%-25s = %d\n', 'minibatch size', self.batch_size)
+    printf('%-25s = %d\n',   'minibatch size', self.batch_size)
     printf('%-25s = %.2e\n', 'learning rate', self.learning_rate)
-    printf('%-25s = %s\n', 'LSTM structure', self.structure)
-    printf('%-25s = %d\n', 'LSTM layers', self.num_layers)
-    printf('%-25s = %d\n', 'sim module hidden dim', self.feats_dim)
+    printf('%-25s = %s\n',   'model structure', self.structure)
+    printf('%-25s = %d\n',   'RNN layers', self.num_layers)
+    printf('%-25s = %d\n',   'sim module hidden dim', self.feats_dim)
 end
 
 -- Serialization
