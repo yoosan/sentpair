@@ -78,10 +78,8 @@ function AttTreeGRU:new_output_module()
 end
 
 function AttTreeGRU:forward(tree, inputs, seq_rep)
-    local loss = 0
     for i = 1, tree.num_children do
-        local _, child_loss = self:forward(tree.children[i], inputs, seq_rep)
-        loss = loss + child_loss
+        self:forward(tree.children[i], inputs, seq_rep)
     end
     local child_h = self:get_child_states(tree)
     local seq_rep_feed
@@ -96,14 +94,7 @@ function AttTreeGRU:forward(tree, inputs, seq_rep)
     tree.state = tree.composer:forward { inputs[tree.idx], child_h, seq_rep_feed }
     seq_rep_feed = nil
     child_h = nil
-    if self.output_module ~= nil then
-        self:allocate_module(tree, 'output_module')
-        tree.output = tree.output_module:forward(tree.state)
-        if self.train and tree.gold_label ~= nil then
-            loss = loss + self.criterion:forward(tree.output, tree.gold_label)
-        end
-    end
-    return tree.state, loss
+    return tree.state
 end
 
 function AttTreeGRU:backward(tree, inputs, seq_rep, grad)

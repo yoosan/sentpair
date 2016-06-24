@@ -1,10 +1,4 @@
 --[[
- - Author: yoosan, SYSUDNLP Group
- - Date: 16/6/3, 2015.
- - Licence MIT
---]]
-
---[[
 
    Child-Sum Tree-GRU. See our paper for details.
 
@@ -37,7 +31,7 @@ function ChildSumTreeGRU:new_composer()
         nn.Linear(self.in_dim, self.mem_dim)(input),
         nn.Linear(self.mem_dim, self.mem_dim)(child_h_sum)
     })
-    local r = nn.Sigmoid()(attrnn.CRowAddTable() {
+    local r = nn.Sigmoid()(nn.CRowAddTable() {
         nn.TemporalConvolution(self.mem_dim, self.mem_dim, 1)(child_h),
         nn.Linear(self.in_dim, self.mem_dim)(input),
     })
@@ -73,8 +67,7 @@ end
 function ChildSumTreeGRU:forward(tree, inputs)
     local loss = 0
     for i = 1, tree.num_children do
-        local _, child_loss = self:forward(tree.children[i], inputs)
-        loss = loss + child_loss
+        local _ = self:forward(tree.children[i], inputs)
     end
     local child_h = self:get_child_states(tree)
     self:allocate_module(tree, 'composer')
@@ -87,7 +80,7 @@ function ChildSumTreeGRU:forward(tree, inputs)
             loss = loss + self.criterion:forward(tree.output, tree.gold_label)
         end
     end
-    return tree.state, loss
+    return tree.state
 end
 
 function ChildSumTreeGRU:backward(tree, inputs, grad)

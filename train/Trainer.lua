@@ -1,8 +1,3 @@
---[[
-
-  Semantic relatedness prediction using LSTMs.
-
---]]
 
 local Trainer = torch.class('Trainer')
 
@@ -57,7 +52,7 @@ function Trainer:__init(config)
     elseif self.structure == 'treelstm' then
         self.model = nn.ChildSumTreeLSTM(model_config)
     elseif self.structure == 'treegru' then
-        self.model = nn.ChildSumTreeLSTM(model_config)
+        self.model = nn.ChildSumTreeGRU(model_config)
     elseif self.structure == 'atreelstm' then
         self.model = nn.AttTreeLSTM(model_config)
         self.latt = nn.LSTM(model_config)
@@ -193,26 +188,26 @@ function Trainer:train(dataset)
                 elseif self.structure == 'treelstm' then
                     inputs = {
                         self.model:forward(ltree, linputs)[2],
-                        self.model:forward(rtree, rinputs)[2]
+                        self.model:forward(rtree, rinputs)[2],
                     }
                 elseif self.structure == 'treegru' then
                     inputs = {
                         self.model:forward(ltree, linputs),
-                        self.model:forward(rtree, rinputs)
+                        self.model:forward(rtree, rinputs),
                     }
                 elseif self.structure == 'atreelstm' then
                     l_seqrep = self.latt:forward(linputs)
                     r_seqrep = self.ratt:forward(rinputs)
                     inputs = {
                         self.model:forward(ltree, linputs, l_seqrep)[2],
-                        self.model:forward(rtree, rinputs, r_seqrep)[2]
+                        self.model:forward(rtree, rinputs, r_seqrep)[2],
                     }
                 else
                     l_seqrep = self.latt:forward(linputs)
                     r_seqrep = self.ratt:forward(rinputs)
                     inputs = {
                         self.model:forward(ltree, linputs, l_seqrep),
-                        self.model:forward(rtree, rinputs, r_seqrep)
+                        self.model:forward(rtree, rinputs, r_seqrep),
                     }
                 end
                 -- compute relatedness
@@ -225,7 +220,7 @@ function Trainer:train(dataset)
                 local rep_grad = self.output_module:backward(inputs, out_grad)
                 if self.structure == 'lstm' or self.structure == 'gru' then
                     self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
-                elseif self.sturcture == 'treegru' then
+                elseif self.structure == 'treegru' then
                     self.model:backward(ltree, linputs, rep_grad[1])
                     self.model:backward(rtree, rinputs, rep_grad[2])
                 elseif self.structure == 'treelstm' then
@@ -243,6 +238,8 @@ function Trainer:train(dataset)
                         self.model:backward(rtree, rinputs, r_seqrep, {zeros, rep_grad[2]})[2]
                     }
                     self:RNN_backward(lsent, rsent, linputs, rinputs, inputs_grad)
+                else
+                    error('Invalid structure: ' .. self.structure)
                 end
             end
 
@@ -314,6 +311,13 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
         inputs = {
             self.model:forward(ltree, linputs),
             self.model:forward(rtree, rinputs)
+        }
+    elseif self.structure == 'atreelstm' then
+        l_seqrep = self.latt:forward(linputs)
+        r_seqrep = self.ratt:forward(rinputs)
+        inputs = {
+            self.model:forward(ltree, linputs, l_seqrep)[2],
+            self.model:forward(rtree, rinputs, r_seqrep)[2]
         }
     else
         l_seqrep = self.latt:forward(linputs)

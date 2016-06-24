@@ -245,10 +245,14 @@ function utils.read_wqa_dataset(dir, vocab)
     dataset.rsents = utils.read_sentences(dir .. 'b.toks', vocab)
     dataset.size = #dataset.ltrees
     local label_file = torch.DiskFile(dir .. 'label.txt')
+    local qid_file = torch.DiskFile(dir .. 'qid.txt')
     dataset.labels = torch.Tensor(dataset.size)
+    dataset.qids = torch.Tensor(dataset.size)
     for i = 1, dataset.size do
         dataset.labels[i] = label_file:readInt() + 1
+        dataset.qids[i] = qid_file:readInt() + 1
     end
     label_file:close()
+    qid_file:close()
     return dataset
 end

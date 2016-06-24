@@ -13,7 +13,6 @@
 -- stats.accuracy
 -- stats.mse
 --]]
-
 -- Description: Pearson correlation coefficient
 -- Input: a is an n*2 table
 function math.pearson(a)
@@ -35,7 +34,7 @@ end
 -- Description: Spearman correlation coefficient
 function math.spearman(a)
     local function aux_func(t) -- auxiliary function
-    return (t == 1 and 0) or (t * t - 1) * t / 12
+        return (t == 1 and 0) or (t * t - 1) * t / 12
     end
 
     for _, v in pairs(a) do v.r = {} end
@@ -58,8 +57,8 @@ function math.spearman(a)
     -- compute the coefficient
     local sum = 0
     for _, v in pairs(a) do -- TODO: use nested loops to reduce loss of precision
-    local t = (v.r[1] - v.r[2]) / 2
-    sum = sum + t * t
+        local t = (v.r[1] - v.r[2]) / 2
+        sum = sum + t * t
     end
     return (S[1] + S[2] - sum) / 2 / math.sqrt(S[1] * S[2])
 end
@@ -114,6 +113,7 @@ function stats.precision(x, y)
     return tp / (tp + fp)
 end
 
+-- recall
 function stats.recall(x, y)
     local tp = 0
     local fp = 0
@@ -133,6 +133,7 @@ function stats.recall(x, y)
     return tp / (tp + fn)
 end
 
+-- f1 score
 function stats.f1(x, y)
     local precision = stats.precision(x, y)
     local recall = stats.recall(x, y)
@@ -150,4 +151,67 @@ function stats.argmax(v)
         end
     end
     return idx
+end
+
+-- avg precision
+function stats.avg_prec(val)
+    local function comps_asc(a, b)
+        return a[1] < b[1]
+    end
+    local function comps_dsc(a, b)
+        return a[2] > b[2]
+    end
+    table.sort(val, comps_asc)
+    table.sort(val, comps_dsc)
+    local avg_p, rel = 0.0, 0.0
+    for i, tup in ipairs(val) do
+        if tup[1] == 2 then
+            rel = rel + 1.0
+            avg_p = avg_p + rel / i
+        end
+    end
+    return avg_p / rel
+end
+
+-- mean average precision
+function stats.MAP(preds)
+    local size = #preds
+    local map_score = 0.0
+    for _, val in pairs(preds) do
+        local avg_p = stats.avg_prec(val)
+        map_score = map_score + avg_p
+    end
+    return map_score / size
+end
+
+-- reciprocal rank
+function stats.rec_rank(val)
+    local function comps_asc(a, b)
+        return a[1] < b[1]
+    end
+    local function comps_dsc(a, b)
+        return a[2] > b[2]
+    end
+    table.sort(val, comps_asc)
+    table.sort(val, comps_dsc)
+    local rec_r, rel = 0.0, 0.0
+    for i, tup in ipairs(val) do
+        if tup[1] == 2 then
+            rel = rel + 1.0
+            rec_r = rec_r + rel / i
+            break
+        end
+    end
+    return rec_r
+end
+
+-- mean reciprocal rank
+function stats.MRR(preds)
+    local size = #preds
+    local mrr_score = 0.0
+    for _, val in pairs(preds) do
+        local avg_p = stats.rec_rank(val)
+        mrr_score = mrr_score + avg_p
+    end
+    return mrr_score / size
 end

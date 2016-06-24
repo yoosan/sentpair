@@ -88,10 +88,8 @@ function AttTreeLSTM:new_output_module()
 end
 
 function AttTreeLSTM:forward(tree, inputs, attent)
-    local loss = 0
     for i = 1, tree.num_children do
-        local _, child_loss = self:forward(tree.children[i], inputs, attent)
-        loss = loss + child_loss
+        self:forward(tree.children[i], inputs, attent)
     end
     local child_c, child_h = self:get_child_states(tree)
     local att_input
@@ -107,14 +105,7 @@ function AttTreeLSTM:forward(tree, inputs, attent)
     child_h = nil
     child_c = nil
     att_input = nil
-    if self.output_module ~= nil then
-        self:allocate_module(tree, 'output_module')
-        tree.output = tree.output_module:forward(tree.state[2])
-        if self.train and tree.gold_label ~= nil then
-            loss = loss + self.criterion:forward(tree.output, tree.gold_label)
-        end
-    end
-    return tree.state, loss
+    return tree.state
 end
 
 function AttTreeLSTM:backward(tree, inputs, attent, grad)

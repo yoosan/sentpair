@@ -69,6 +69,21 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
             local f1 = stats.f1(predictions, dset_dev.labels)
             printf('-- Dev accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
             dev_score = accuracy
+        elseif tr.task == 'WQA' then
+            local qids = dset_dev.qids
+            local qa_dict = {}
+            for i = 1, dset_dev.size do
+                qa_dict[qids[i]] = {}
+            end
+            for i = 1, dset_dev.size do
+                table.insert(qa_dict[qids[i]], {dset_dev.labels[i], predictions[i]})
+            end
+            print(qa_dict)
+            torch.save('ds.t7', qa_dict)
+            local map_score = stats.MAP(qa_dict)
+            local mrr_score = stats.MRR(qa_dict)
+            printf('-- Dev MAP = %.4f, MRR score = %.4f \n', map_score, mrr_score)
+            dev_score = map_score
         else
             local accuracy = stats.accuracy(predictions, dset_dev.labels)
             printf('-- Dev accuracy = %.4f \n', accuracy)
@@ -93,6 +108,18 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
         local accuracy = stats.accuracy(test_preds, dset_test.labels)
         local f1 = stats.f1(test_preds, dset_test.labels)
         printf('-- Test accuracy = %.4f, f1 score = %.4f \n', accuracy, f1)
+    elseif tr.task == 'WQA' then
+        local qids = dset_test.qids
+        local qa_dict = {}
+        for i = 1, dset_test.size do
+            qa_dict[qids[i]] = {}
+        end
+        for i = 1, dset_test.size do
+            table.insert(qa_dict[qids[i]], {dset_test.labels[i], test_preds[i]})
+        end
+        local map_score = stats.MAP(qa_dict)
+        local mrr_score = stats.MRR(qa_dict)
+        printf('-- Test MAP = %.4f, MRR score = %.4f \n', map_score, mrr_score)
     else
         local accuracy = stats.accuracy(test_preds, dset_test.labels)
         printf('-- Test accuracy = %.4f \n', accuracy)
