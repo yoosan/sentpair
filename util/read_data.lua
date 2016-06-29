@@ -4,12 +4,6 @@
 
 --]]
 
---[[
-
-   Load word embedding
-
---]]
-
 function utils.load_embedding(dir, vocab, uniform_val)
     local emb_prefix = dir .. '/glove/glove.840B'
     local emb_vocab = utils.Vocab(emb_prefix .. '.vocab')

@@ -44,7 +44,7 @@ function AttTreeGRU:new_composer()
         nn.Linear(self.in_dim, self.mem_dim)(input),
         nn.Linear(self.mem_dim, self.mem_dim)(child_h_sum)
     })
-    local r = nn.Sigmoid()(attrnn.CRowAddTable() {
+    local r = nn.Sigmoid()(nn.CRowAddTable() {
         nn.TemporalConvolution(self.mem_dim, self.mem_dim, 1)(child_h),
         nn.Linear(self.in_dim, self.mem_dim)(input),
     })

@@ -78,8 +78,6 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
             for i = 1, dset_dev.size do
                 table.insert(qa_dict[qids[i]], {dset_dev.labels[i], predictions[i]})
             end
-            print(qa_dict)
-            torch.save('ds.t7', qa_dict)
             local map_score = stats.MAP(qa_dict)
             local mrr_score = stats.MRR(qa_dict)
             printf('-- Dev MAP = %.4f, MRR score = %.4f \n', map_score, mrr_score)

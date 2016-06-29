@@ -10,6 +10,7 @@ function Trainer:__init(config)
     self.reg            = config.reg            or 1e-4
     self.structure      = config.structure      or 'lstm' -- {lstm, bilstm}
     self.feats_dim      = config.feats_dim      or 50
+    self.extra_dim      = config.extra_dim      or 4
 
     -- word embedding
     self.emb_vecs = config.emb_vecs
@@ -65,8 +66,11 @@ function Trainer:__init(config)
         error('invalid model type: ' .. self.structure)
     end
 
-    -- output module
+    -- output module and feats modules
+    self.feats_module = self:new_feats_module()
     self.output_module = self:new_output_module()
+
+    -- modules
     local modules = nn.Parallel()
     if self.structure == 'lstm' or self.structure == 'gru' then
         modules:add(self.lmodel)
@@ -75,6 +79,7 @@ function Trainer:__init(config)
     else
         modules:add(self.model):add(self.latt)
     end
+    modules:add(self.feats_module)
     modules:add(self.output_module)
     self.params, self.grad_params = modules:getParameters()
 
@@ -87,8 +92,8 @@ function Trainer:__init(config)
     end
 end
 
-function Trainer:new_output_module()
-    local lvec, rvec, inputs, input_dim
+function Trainer:new_feats_module()
+    local lvec, rvec, inputs, input_dim, extra_feat
     if self.structure == 'lstm' or self.structure == 'gru' then
         -- standard (left-to-right) LSTM
         input_dim = 2 * self.num_layers * self.mem_dim
@@ -105,23 +110,37 @@ function Trainer:new_output_module()
         lvec, rvec = linput, rinput
         inputs = { linput, rinput }
     end
+
     local mult_dist = nn.CMulTable() { lvec, rvec }
     local add_dist = nn.Abs()(nn.CSubTable() { lvec, rvec })
     local vec_dist_feats = nn.JoinTable(1) { mult_dist, add_dist }
     local vecs_to_input = nn.gModule(inputs, { vec_dist_feats })
 
-    -- define similarity model architecture
-    local classifier
-    if self.task == 'MSRP' or self.task == 'WQA' then
-        classifier = nn.Sigmoid()
-    elseif self.task == 'SICK' or self.task == 'SNLI' then
-        classifier = nn.LogSoftMax()
-    end
-    local output_module = nn.Sequential()
+    local feats = nn.Sequential()
     :add(vecs_to_input)
     :add(nn.Linear(input_dim, self.feats_dim))
     :add(nn.Sigmoid())
-    :add(nn.Linear(self.feats_dim, self.num_classes))
+    return feats
+end
+
+function Trainer:new_output_module()
+    local feats_vec, extra_vec = nn.Identity()(), nn.Identity()()
+    local classifier, feats_dim, vecs, invec
+    if self.task == 'MSRP' or self.task == 'WQA' then
+        classifier = nn.Sigmoid()
+        feats_dim = self.feats_dim + self.extra_dim
+        vecs = {feats_vec, extra_vec}
+        local tmp = nn.JoinTable(1)(vecs)
+        invec = nn.gModule({feats_vec, extra_vec}, {tmp})
+    elseif self.task == 'SICK' or self.task == 'SNLI' then
+        feats_dim = self.feats_dim
+        classifier = nn.LogSoftMax()
+        invec = nn.gModule({feats_vec}, {feats_vec})
+    end
+
+    local output_module = nn.Sequential()
+    :add(invec)
+    :add(nn.Linear(feats_dim, self.num_classes))
     :add(classifier)
     return output_module
 end
@@ -178,6 +197,7 @@ function Trainer:train(dataset)
                 local linputs = self.emb_vecs:index(1, lsent:long()):double()
                 local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
+
                 -- get sentence representations
                 local inputs, l_seqrep, r_seqrep
                 if self.structure == 'lstm' or self.structure == 'gru' then
@@ -211,13 +231,16 @@ function Trainer:train(dataset)
                     }
                 end
                 -- compute relatedness
-                local output = self.output_module:forward(inputs)
+                local feats = self.feats_module:forward(inputs)
+                local extra_feats = self:get_extra_feats(lsent, rsent)
+                local output = self.output_module:forward({feats, extra_feats})
                 -- compute loss and backpropagate
                 local target = self.task == 'SNLI' and targets[j][1] or targets[j]
                 local example_loss = self.criterion:forward(output, target)
                 loss = loss + example_loss
                 local out_grad = self.criterion:backward(output, targets[j])
-                local rep_grad = self.output_module:backward(inputs, out_grad)
+                local feats_grad = self.output_module:backward({feats, extra_feats}, out_grad)
+                local rep_grad = self.feats_module:backward(feats, feats_grad[1])
                 if self.structure == 'lstm' or self.structure == 'gru' then
                     self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
                 elseif self.structure == 'treegru' then
@@ -327,7 +350,9 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
             self.model:forward(rtree, rinputs, r_seqrep)
         }
     end
-    local output = self.output_module:forward(inputs)
+    local feats = self.feats_module:forward(inputs)
+    local extra_feats = self:get_extra_feats(lsent, rsent)
+    local output = self.output_module:forward({feats, extra_feats})
     if self.structure == 'lstm' or self.structure == 'gru' then
         self.lmodel:forget()
         self.rmodel:forget()
@@ -361,6 +386,19 @@ function Trainer:eval(dataset)
         end
     end
     return predictions
+end
+
+function Trainer:get_extra_feats(lsent, rsent)
+    local len_a = lsent:size(1)
+    local len_b = lsent:size(1)
+    local unigram = nlptools.unigram(lsent, rsent)
+    local bigram = nlptools.bigram(lsent, rsent)
+    local feats = torch.zeros(4)
+    feats[1] = len_a
+    feats[2] = len_b
+    feats[3] = unigram
+    feats[4] = bigram
+    return feats
 end
 
 function Trainer:print_config()
