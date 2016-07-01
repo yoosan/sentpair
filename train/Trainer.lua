@@ -23,7 +23,7 @@ function Trainer:__init(config)
     }
 
     -- number of classes and criterion
-    if self.task == 'MSRP' or self.task == 'WQA' then
+    if self.task == 'MSRP' or self.task == 'WQA' or self.task == 'GRADE' then
         self.num_classes = 2
         self.criterion = nn.BCECriterion()
     elseif self.task == 'SNLI' then
@@ -67,8 +67,8 @@ function Trainer:__init(config)
     end
 
     -- output module and feats modules
-    self.feats_module = self:new_feats_module()
-    self.output_module = self:new_output_module()
+    -- self.feats_module = self:new_feats_module()
+    self.output_module = self:new_output_module_standard()
 
     -- modules
     local modules = nn.Parallel()
@@ -79,7 +79,6 @@ function Trainer:__init(config)
     else
         modules:add(self.model):add(self.latt)
     end
-    modules:add(self.feats_module)
     modules:add(self.output_module)
     self.params, self.grad_params = modules:getParameters()
 
@@ -123,10 +122,50 @@ function Trainer:new_feats_module()
     return feats
 end
 
+function Trainer:new_output_module_standard()
+    local lvec, rvec, inputs, input_dim, extra_feat
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        -- standard (left-to-right) LSTM
+        input_dim = 2 * self.num_layers * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        if self.num_layers == 1 then
+            lvec, rvec = linput, rinput
+        else
+            lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+        end
+        inputs = { linput, rinput }
+    else
+        input_dim = 2 * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        lvec, rvec = linput, rinput
+        inputs = { linput, rinput }
+    end
+
+    local mult_dist = nn.CMulTable() { lvec, rvec }
+    local add_dist = nn.Abs()(nn.CSubTable() { lvec, rvec })
+    local vec_dist_feats = nn.JoinTable(1) { mult_dist, add_dist }
+    local vecs_to_input = nn.gModule(inputs, { vec_dist_feats })
+
+    local classifier
+    if self.task == 'MSRP' or self.task == 'WQA' or self.task == 'GRADE' then
+        classifier = nn.Sigmoid()
+    elseif self.task == 'SICK' or self.task == 'SNLI' then
+        classifier = nn.LogSoftMax()
+    end
+
+    local feats = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.Linear(input_dim, self.feats_dim))
+    :add(nn.Sigmoid())
+    :add(nn.Linear(self.feats_dim, self.num_classes))
+    :add(classifier)
+    return feats
+end
+
 function Trainer:new_output_module()
     local feats_vec, extra_vec = nn.Identity()(), nn.Identity()()
     local classifier, feats_dim, vecs, invec
-    if self.task == 'MSRP' or self.task == 'WQA' then
+    if self.task == 'MSRP' or self.task == 'WQA' or self.task == 'GRADE' then
         classifier = nn.Sigmoid()
         feats_dim = self.feats_dim + self.extra_dim
         vecs = {feats_vec, extra_vec}
@@ -197,7 +236,6 @@ function Trainer:train(dataset)
                 local linputs = self.emb_vecs:index(1, lsent:long()):double()
                 local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
-
                 -- get sentence representations
                 local inputs, l_seqrep, r_seqrep
                 if self.structure == 'lstm' or self.structure == 'gru' then
@@ -219,28 +257,25 @@ function Trainer:train(dataset)
                     l_seqrep = self.latt:forward(linputs)
                     r_seqrep = self.ratt:forward(rinputs)
                     inputs = {
-                        self.model:forward(ltree, linputs, l_seqrep)[2],
-                        self.model:forward(rtree, rinputs, r_seqrep)[2],
+                        self.model:forward(ltree, linputs, r_seqrep)[2],
+                        self.model:forward(rtree, rinputs, l_seqrep)[2],
                     }
                 else
                     l_seqrep = self.latt:forward(linputs)
                     r_seqrep = self.ratt:forward(rinputs)
                     inputs = {
-                        self.model:forward(ltree, linputs, l_seqrep),
-                        self.model:forward(rtree, rinputs, r_seqrep),
+                        self.model:forward(ltree, linputs, r_seqrep),
+                        self.model:forward(rtree, rinputs, l_seqrep),
                     }
                 end
                 -- compute relatedness
-                local feats = self.feats_module:forward(inputs)
-                local extra_feats = self:get_extra_feats(lsent, rsent)
-                local output = self.output_module:forward({feats, extra_feats})
+                local output = self.output_module:forward(inputs)
                 -- compute loss and backpropagate
                 local target = self.task == 'SNLI' and targets[j][1] or targets[j]
                 local example_loss = self.criterion:forward(output, target)
                 loss = loss + example_loss
                 local out_grad = self.criterion:backward(output, targets[j])
-                local feats_grad = self.output_module:backward({feats, extra_feats}, out_grad)
-                local rep_grad = self.feats_module:backward(feats, feats_grad[1])
+                local rep_grad = self.output_module:backward(inputs, out_grad)
                 if self.structure == 'lstm' or self.structure == 'gru' then
                     self:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
                 elseif self.structure == 'treegru' then
@@ -251,14 +286,14 @@ function Trainer:train(dataset)
                     self.model:backward(rtree, rinputs, {zeros, rep_grad[2]})
                 elseif self.structure == 'atreegru' then
                     local inputs_grad = {
-                        self.model:backward(ltree, linputs, l_seqrep, rep_grad[1])[2],
-                        self.model:backward(rtree, rinputs, r_seqrep, rep_grad[2])[2]
+                        self.model:backward(ltree, linputs, r_seqrep, rep_grad[1])[2],
+                        self.model:backward(rtree, rinputs, l_seqrep, rep_grad[2])[2]
                     }
                     self:RNN_backward(lsent, rsent, linputs, rinputs, inputs_grad)
                 elseif self.structure == 'atreelstm' then
                     local inputs_grad = {
-                        self.model:backward(ltree, linputs, l_seqrep, {zeros, rep_grad[1]})[2],
-                        self.model:backward(rtree, rinputs, r_seqrep, {zeros, rep_grad[2]})[2]
+                        self.model:backward(ltree, linputs, r_seqrep, {zeros, rep_grad[1]})[2],
+                        self.model:backward(rtree, rinputs, l_seqrep, {zeros, rep_grad[2]})[2]
                     }
                     self:RNN_backward(lsent, rsent, linputs, rinputs, inputs_grad)
                 else
@@ -339,20 +374,21 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
         l_seqrep = self.latt:forward(linputs)
         r_seqrep = self.ratt:forward(rinputs)
         inputs = {
-            self.model:forward(ltree, linputs, l_seqrep)[2],
-            self.model:forward(rtree, rinputs, r_seqrep)[2]
+            self.model:forward(ltree, linputs, r_seqrep)[2],
+            self.model:forward(rtree, rinputs, l_seqrep)[2]
         }
     else
         l_seqrep = self.latt:forward(linputs)
         r_seqrep = self.ratt:forward(rinputs)
         inputs = {
-            self.model:forward(ltree, linputs, l_seqrep),
-            self.model:forward(rtree, rinputs, r_seqrep)
+            self.model:forward(ltree, linputs, r_seqrep),
+            self.model:forward(rtree, rinputs, l_seqrep)
         }
     end
-    local feats = self.feats_module:forward(inputs)
-    local extra_feats = self:get_extra_feats(lsent, rsent)
-    local output = self.output_module:forward({feats, extra_feats})
+    -- local feats = self.feats_module:forward(inputs)
+    -- local extra_feats = self:get_extra_feats(lsent, rsent)
+    -- local output = self.output_module:forward({feats, extra_feats})
+    local output = self.output_module:forward(inputs)
     if self.structure == 'lstm' or self.structure == 'gru' then
         self.lmodel:forget()
         self.rmodel:forget()

@@ -146,6 +146,8 @@ function utils.read_dataset(dir, vocab)
         return utils.read_snli_dataset(dir, vocab)
     elseif string.find(dir, 'wqa') then
         return utils.read_wqa_dataset(dir, vocab)
+    elseif string.find(dir, 'grade') then
+        return utils.read_grade_dataset(dir, vocab)
     else
         error('No such dataset!')
     end
@@ -248,5 +250,22 @@ function utils.read_wqa_dataset(dir, vocab)
     end
     label_file:close()
     qid_file:close()
+    return dataset
+end
+
+function utils.read_grade_dataset(dir, vocab)
+    local dataset = {}
+    dataset.vocab = vocab
+    dataset.ltrees = utils.read_trees(dir .. 'a.parents')
+    dataset.rtrees = utils.read_trees(dir .. 'b.parents')
+    dataset.lsents = utils.read_sentences(dir .. 'a.toks', vocab)
+    dataset.rsents = utils.read_sentences(dir .. 'b.toks', vocab)
+    dataset.size = #dataset.ltrees
+    local label_file = torch.DiskFile(dir .. 'label.txt')
+    dataset.labels = torch.Tensor(dataset.size)
+    for i = 1, dataset.size do
+        dataset.labels[i] = label_file:readInt() + 1
+    end
+    label_file:close()
     return dataset
 end
