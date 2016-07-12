@@ -212,18 +212,29 @@ end
 function utils.read_msrp_dataset(dir, vocab)
     local dataset = {}
     dataset.vocab = vocab
-    dataset.ltrees = utils.read_trees(dir .. 'a.parents')
-    dataset.rtrees = utils.read_trees(dir .. 'b.parents')
-    dataset.lsents = utils.read_sentences(dir .. 'a.toks', vocab)
-    dataset.rsents = utils.read_sentences(dir .. 'b.toks', vocab)
-    dataset.size = #dataset.ltrees
+    local ltrees = utils.read_trees(dir .. 'a.parents')
+    local rtrees = utils.read_trees(dir .. 'b.parents')
+    local lsents = utils.read_sentences(dir .. 'a.toks', vocab)
+    local rsents = utils.read_sentences(dir .. 'b.toks', vocab)
+    local size = #ltrees
+
     local label_file = torch.DiskFile(dir .. 'label.txt')
-    dataset.labels = torch.Tensor(dataset.size)
-    for i = 1, dataset.size do
-        dataset.labels[i] = label_file:readInt() + 1
+    local labels = torch.Tensor(size)
+    for i = 1, size do
+        labels[i] = label_file:readInt() + 1
     end
     label_file:close()
+    dataset.lsents = lsents
+    dataset.ltrees = ltrees
+    dataset.rsents = rsents
+    dataset.rtrees = rtrees
+    dataset.size = size
+    dataset.labels = labels
     return dataset
+end
+
+function utils.split_data(dataset, split)
+
 end
 
 --[[

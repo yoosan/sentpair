@@ -65,6 +65,14 @@ function nlptools.makeBigram(a)
     return bigram_tb
 end
 
+function nlptools.makeTrigram(a)
+    local trigram_tb = {}
+    for i = 1, a:size(1) - 2 do
+        table.insert(trigram_tb, {a[i], a[i+1], a[i+2]})
+    end
+    return trigram_tb
+end
+
 function nlptools.bigram(a, b)
     local bigram_a = nlptools.makeBigram(a)
     local bigram_b = nlptools.makeBigram(b)
@@ -81,21 +89,28 @@ function nlptools.bigram(a, b)
     return cnt
 end
 
+function nlptools.trigram(a, b)
+    local trigram_a = nlptools.makeTrigram(a)
+    local trigram_b = nlptools.makeTrigram(b)
+    local prd_trigram_a = utils.makeHashTable(trigram_a)
+    local prd_trigram_b = utils.makeHashTable(trigram_b)
+    local cnt = 0
+    for i = 1, #prd_trigram_a do
+        for j = 1, #prd_trigram_b do
+            if table.equal(prd_trigram_a[i], prd_trigram_b[j]) then
+                cnt = cnt + 1
+            end
+        end
+    end
+    return cnt
+end
 
 --local a = {2, 3, 3, 1, 5, 1, 5 }
 --local at = torch.Tensor(a)
 --local b = {3, 2, 4, 1, 5}
 --local bt = torch.Tensor(b)
---local e3 = { { 1, 2 },  {2, 2} }
---local e4 = {1, 2}
---local t3 = table.contains(e3, e4)
---print(t3)
---
 --local cnt = nlptools.unigram(torch.Tensor(a), torch.Tensor(b))
---print(cnt)
---local bi = nlptools.makeBigram(t)
---print(bi)
---local r = utils.makeHashTable(bi)
---print(r)
-
+--
 --print(nlptools.bigram(at, bt))
+--
+--print(nlptools.trigram(at, bt))

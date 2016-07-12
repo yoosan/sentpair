@@ -7,7 +7,7 @@
 require 'init.lua'
 
 local cmd = torch.CmdLine()
-cmd:option('-task', 'SICK', 'training task, dataset for modeling sentence pair')
+cmd:option('-task', 'SICK', 'training dataset for modeling sentence pair')
 cmd:option('-structure', 'lstm', 'model structure')
 cmd:option('-mem_dim', 150, 'dimension of memory')
 cmd:option('-n_epoches', 10, 'number of epoches for training')
@@ -28,6 +28,13 @@ local dset_train = utils.read_dataset(data_dir .. '/train/', vocab)
 local dset_dev = utils.read_dataset(data_dir .. '/dev/', vocab)
 local dset_test = utils.read_dataset(data_dir .. '/test/', vocab)
 
+--local dset_dev
+--if config.task == 'MSRP' then
+--    dset_dev = dset_test
+--else
+--    dset_dev = utils.read_dataset(data_dir .. '/dev/', vocab)
+--end
+
 printf('size of vocab = %d\n', vocab.size)
 printf('number of train = %d\n', dset_train.size)
 printf('number of dev   = %d\n', dset_dev.size)
@@ -36,13 +43,6 @@ printf('number of test  = %d\n', dset_test.size)
 -- train and evaluate
 local trainer = Trainer(config)
 trainer:print_config()
---trainer:train(dset_train)
---local predictions = trainer:eval(dset_dev)
---local pearson_score = stats.pearson(predictions, dset_dev.labels)
---local spearman_score = stats.spearmanr(predictions, dset_dev.labels)
---local mse_score = stats.mse(predictions, dset_dev.labels)
---printf('-- Dev pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
---    pearson_score, spearman_score, mse_score)
 
 function run(tr, n_epoches, dset_train, dset_dev, dset_test)
     header('Training model ... ')
@@ -122,6 +122,9 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
         local accuracy = stats.accuracy(test_preds, dset_test.labels)
         printf('-- Test accuracy = %.4f \n', accuracy)
     end
+    print('save predictions')
+    local path = 'data/saved/' .. tr.task .. '-' .. tr.structure .. '.t7'
+    torch.save(path, {test_preds, dset_test.labels})
 end
 
 run(trainer, config.n_epoches, dset_train, dset_dev, dset_test)
