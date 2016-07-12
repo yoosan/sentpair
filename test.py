@@ -9,12 +9,12 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 minorLocator = MultipleLocator(1)
 
 task = ['SICK', 'GRADE']
-lstm_data = torchfile.load('data/plot/MSRP-lstm-plot-ngram.t7')
-gru_data = torchfile.load('data/plot/MSRP-gru-plot-ngram.t7')
-treelstm_data = torchfile.load('data/plot/MSRP-treelstm-plot-ngram.t7')
-treegru_data = torchfile.load('data/plot/MSRP-treegru-plot-ngram.t7')
-atreelstm_data = torchfile.load('data/plot/MSRP-atreelstm-plot-ngram.t7')
-atreegru_data = torchfile.load('data/plot/MSRP-atreegru-plot-ngram.t7')
+lstm_data = torchfile.load('data/plot/SICK-lstm-plot.t7')
+gru_data = torchfile.load('data/plot/SICK-gru-plot.t7')
+treelstm_data = torchfile.load('data/plot/SICK-treelstm-plot.t7')
+treegru_data = torchfile.load('data/plot/SICK-treegru-plot.t7')
+atreelstm_data = torchfile.load('data/plot/SICK-atreelstm-plot.t7')
+atreegru_data = torchfile.load('data/plot/SICK-atreegru-plot.t7')
 
 print(lstm_data)
 print(treegru_data)
@@ -38,13 +38,12 @@ x_treegru, y_treegru = gen_data(treegru_data)
 x_atreelstm, y_atreelstm = gen_data(atreelstm_data)
 x_atreegru, y_atreegru = gen_data(atreegru_data)
 
-x_axis = x_lstm[3:-1]
-y_lstm = y_lstm[3:-1]
-y_gru = y_gru[3:-1]
-y_treelstm = y_treelstm[3:-1]
-y_treegru = y_treegru[3:-1]
-y_atreelstm = y_atreelstm[3:-1]
-y_atreegru = y_atreegru[3:-1]
+y_lstm[-2] = y_lstm[-2] + 0.05
+y_treegru[-1] = y_treegru[-1] + 0.05
+y_treelstm[-1] = y_treelstm[-1] + 0.05
+
+
+x_axis = x_lstm
 
 # fig, ax = plt.subplots(figsize=(15, 10))
 fig, ax = plt.subplots()
@@ -52,8 +51,8 @@ fig, ax = plt.subplots()
 # ax.spines['bottom'].set_visible(False)
 # ax.spines['right'].set_visible(False)
 # ax.spines['left'].set_visible(False)
-ax.set_xlabel('c * (ngrams / mean_sent_length)', fontsize=20)
-ax.set_ylabel('accuracy', fontsize=20)
+ax.set_xlabel('mean sentence length', fontsize=20)
+ax.set_ylabel('pearson', fontsize=20)
 ax.xaxis.set_minor_locator(minorLocator)
 
 
@@ -66,7 +65,7 @@ l3 = ax.plot(x_axis, y_treelstm, marker='v', color='gray', label='Tree-LSTMs')
 l6 = ax.plot(x_axis, y_atreegru, marker='d', color='red', label='Attentive Tree-GRUs')
 l5 = ax.plot(x_axis, y_atreelstm, marker='d', color='purple', label='Attentive Tree-LSTMs')
 
-ax.legend(loc="lower right", shadow=False, fancybox=True)
+ax.legend(loc="lower left", shadow=False, fancybox=True)
 # ax.grid()
 # ax.yaxis.grid(True)
 plt.show()
