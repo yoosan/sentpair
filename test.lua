@@ -25,7 +25,7 @@ require 'init.lua'
 --:add(vecs_to_input)
 --:add(nn.Linear(input_dim, 5))
 --:add(nn.Sigmoid())
---
+--visualize_attention_weight.py
 --local res2 = temp:forward({a, b})
 --print(res2)
 --
