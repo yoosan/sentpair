@@ -1,0 +1,16 @@
+# Download datasets and Golve vectors
+
+from __future__ import print_function
+import urllib2
+import sys
+import os
+import shutil
+import zipfile
+import gzip
+
+a = '/Users/yoosan/Desktop/sentpair'
+f = a.split('/')[-1]
+puts f
+
+s = os.path.join('hah', f)
+puts s
