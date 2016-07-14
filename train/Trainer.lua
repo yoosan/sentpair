@@ -10,7 +10,6 @@ function Trainer:__init(config)
     self.reg            = config.reg            or 1e-4
     self.structure      = config.structure      or 'lstm' -- {lstm, bilstm}
     self.feats_dim      = config.feats_dim      or 50
-    self.extra_dim      = config.extra_dim      or 4
 
     -- word embedding
     self.emb_vecs = config.emb_vecs
@@ -385,9 +384,6 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
             self.model:forward(rtree, rinputs, l_seqrep)
         }
     end
-    -- local feats = self.feats_module:forward(inputs)
-    -- local extra_feats = self:get_extra_feats(lsent, rsent)
-    -- local output = self.output_module:forward({feats, extra_feats})
     local output = self.output_module:forward(inputs)
     if self.structure == 'lstm' or self.structure == 'gru' then
         self.lmodel:forget()
@@ -422,19 +418,6 @@ function Trainer:eval(dataset)
         end
     end
     return predictions
-end
-
-function Trainer:get_extra_feats(lsent, rsent)
-    local len_a = lsent:size(1)
-    local len_b = lsent:size(1)
-    local unigram = nlptools.unigram(lsent, rsent)
-    local bigram = nlptools.bigram(lsent, rsent)
-    local feats = torch.zeros(4)
-    feats[1] = len_a
-    feats[2] = len_b
-    feats[3] = unigram
-    feats[4] = bigram
-    return feats
 end
 
 function Trainer:print_config()
