@@ -10,7 +10,7 @@ function Trainer:__init(config)
     self.reg            = config.reg            or 1e-4
     self.structure      = config.structure      or 'lstm' -- {lstm, bilstm}
     self.feats_dim      = config.feats_dim      or 50
-
+    self.extra_dim      = config.extra_dim      or 4
     -- word embedding
     self.emb_vecs = config.emb_vecs
     self.emb_dim = config.emb_vecs:size(2)
@@ -66,7 +66,6 @@ function Trainer:__init(config)
     end
 
     -- output module and feats modules
-    -- self.feats_module = self:new_feats_module()
     self.output_module = self:new_output_module_standard()
 
     -- modules
@@ -90,39 +89,8 @@ function Trainer:__init(config)
     end
 end
 
-function Trainer:new_feats_module()
-    local lvec, rvec, inputs, input_dim, extra_feat
-    if self.structure == 'lstm' or self.structure == 'gru' then
-        -- standard (left-to-right) LSTM
-        input_dim = 2 * self.num_layers * self.mem_dim
-        local linput, rinput = nn.Identity()(), nn.Identity()()
-        if self.num_layers == 1 then
-            lvec, rvec = linput, rinput
-        else
-            lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
-        end
-        inputs = { linput, rinput }
-    else
-        input_dim = 2 * self.mem_dim
-        local linput, rinput = nn.Identity()(), nn.Identity()()
-        lvec, rvec = linput, rinput
-        inputs = { linput, rinput }
-    end
-
-    local mult_dist = nn.CMulTable() { lvec, rvec }
-    local add_dist = nn.Abs()(nn.CSubTable() { lvec, rvec })
-    local vec_dist_feats = nn.JoinTable(1) { mult_dist, add_dist }
-    local vecs_to_input = nn.gModule(inputs, { vec_dist_feats })
-
-    local feats = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(input_dim, self.feats_dim))
-    :add(nn.Sigmoid())
-    return feats
-end
-
 function Trainer:new_output_module_standard()
-    local lvec, rvec, inputs, input_dim, extra_feat
+    local lvec, rvec, inputs, input_dim
     if self.structure == 'lstm' or self.structure == 'gru' then
         -- standard (left-to-right) LSTM
         input_dim = 2 * self.num_layers * self.mem_dim
@@ -158,6 +126,37 @@ function Trainer:new_output_module_standard()
     :add(nn.Sigmoid())
     :add(nn.Linear(self.feats_dim, self.num_classes))
     :add(classifier)
+    return feats
+end
+
+function Trainer:new_feats_module()
+    local lvec, rvec, inputs, input_dim, extra_feat
+    if self.structure == 'lstm' or self.structure == 'gru' then
+        -- standard (left-to-right) LSTM
+        input_dim = 2 * self.num_layers * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        if self.num_layers == 1 then
+            lvec, rvec = linput, rinput
+        else
+            lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+        end
+        inputs = { linput, rinput }
+    else
+        input_dim = 2 * self.mem_dim
+        local linput, rinput = nn.Identity()(), nn.Identity()()
+        lvec, rvec = linput, rinput
+        inputs = { linput, rinput }
+    end
+
+    local mult_dist = nn.CMulTable() { lvec, rvec }
+    local add_dist = nn.Abs()(nn.CSubTable() { lvec, rvec })
+    local vec_dist_feats = nn.JoinTable(1) { mult_dist, add_dist }
+    local vecs_to_input = nn.gModule(inputs, { vec_dist_feats })
+
+    local feats = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.Linear(input_dim, self.feats_dim))
+    :add(nn.Sigmoid())
     return feats
 end
 
@@ -338,7 +337,7 @@ function Trainer:RNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
     end
 end
 
--- Predict the similarity of a sentence pair.
+-- Predict one sample
 function Trainer:predict(lsent, rsent, ltree, rtree)
     if self.structure == 'lstm' or self.structure == 'gru' then
         self.lmodel:evaluate()
@@ -404,7 +403,7 @@ function Trainer:predict(lsent, rsent, ltree, rtree)
     end
 end
 
--- Produce similarity predictions for each sentence pair in the dataset.
+-- Evaluate for each sentence pair in the dev/test dataset.
 function Trainer:eval(dataset)
     local predictions = torch.Tensor(dataset.size)
     for i = 1, dataset.size do
@@ -440,15 +439,14 @@ end
 function Trainer:save(path)
     local config = {
         batch_size = self.batch_size,
-        emb_vecs = self.emb_vecs:float(),
         learning_rate = self.learning_rate,
-        num_layers = self.num_layers,
         mem_dim = self.mem_dim,
         sim_nhidden = self.sim_nhidden,
         reg = self.reg,
         structure = self.structure,
     }
 
+    print(path)
     torch.save(path, {
         params = self.params,
         config = config,

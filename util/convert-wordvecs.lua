@@ -20,10 +20,8 @@ while true do
   end
   count = count + 1
 end
-
 print('count = ' .. count)
 print('dim = ' .. dim)
-
 -- convert to torch-friendly format
 file:seek('set')
 local vocab = io.open(vocabpath, 'w')

@@ -264,6 +264,11 @@ function utils.read_wqa_dataset(dir, vocab)
     return dataset
 end
 
+--[[
+
+  AI2-8grade dataset
+
+--]]
 function utils.read_grade_dataset(dir, vocab)
     local dataset = {}
     dataset.vocab = vocab
@@ -279,4 +284,38 @@ function utils.read_grade_dataset(dir, vocab)
     end
     label_file:close()
     return dataset
+end
+
+function utils.split_data(dataset, ratio)
+    local dset_test = {}
+    local size = math.floor(dataset.size * ratio)
+    local indeics = torch.randperm(dataset.size)
+    dset_test.lsents = {}
+    dset_test.rsents = {}
+    dset_test.ltrees = {}
+    dset_test.rtrees = {}
+    dset_test.labels = torch.zeros(size)
+    dset_test.size = size
+    for i = 1, size do
+        dset_test.lsents[i] = dataset.lsents[indeics[i]]
+        dset_test.rsents[i] = dataset.rsents[indeics[i]]
+        dset_test.ltrees[i] = dataset.ltrees[indeics[i]]
+        dset_test.rtrees[i] = dataset.rtrees[indeics[i]]
+        dset_test.labels[i] = dataset.labels[indeics[i]]
+    end
+    local dset_train = {}
+    dset_train.lsents = {}
+    dset_train.rsents = {}
+    dset_train.ltrees = {}
+    dset_train.rtrees = {}
+    dset_train.labels = torch.zeros(dataset.size - size)
+    dset_train.size = dataset.size - size
+    for i = size + 1, dataset.size do
+        dset_train.lsents[i - size] = dataset.lsents[indeics[i]]
+        dset_train.rsents[i - size] = dataset.rsents[indeics[i]]
+        dset_train.ltrees[i - size] = dataset.ltrees[indeics[i]]
+        dset_train.rtrees[i - size] = dataset.rtrees[indeics[i]]
+        dset_train.labels[i - size] = dataset.labels[indeics[i]]
+    end
+    return dset_train, dset_test
 end
