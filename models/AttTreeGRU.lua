@@ -21,8 +21,6 @@ function AttTreeGRU:__init(config)
     self.output_module = self:new_output_module()
     self.output_modules = {}
 
-    -- task
-    self.task = config.task or true
 end
 
 function AttTreeGRU:new_composer()
@@ -34,9 +32,7 @@ function AttTreeGRU:new_composer()
         nn.Linear(self.mem_dim, self.mem_dim, false)(prev_res)
     })
     local temp = nn.Linear(self.mem_dim, 1)(M)
-    local attention_weights = (task == true)
-            and nn.Transpose({1,2})(nn.SoftMax()(nn.Transpose({1,2})(temp)))
-            or nn.Transpose({1,2})(nn.Sigmoid()(nn.Transpose({1,2})(temp)))
+    local attention_weights = nn.Transpose({1,2})(nn.SoftMax()(nn.Transpose({1,2})(temp)))
     local child_h_att = nn.MM(true, false)({ child_h, attention_weights })
     local child_h_sum = nn.Reshape(self.mem_dim)(child_h_att)
 

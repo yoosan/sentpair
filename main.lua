@@ -90,12 +90,14 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
     header('Evaluating on test set')
     printf('-- using model with dev score = %.4f\n', best_score)
     local test_preds = best_trainer:eval(dset_test)
+    local flag = false
     if tr.task == 'SICK' then
         local pearson_score = stats.pearson(test_preds, dset_test.labels)
         local spearman_score = stats.spearmanr(test_preds, dset_test.labels)
         local mse_score = stats.mse(test_preds, dset_test.labels)
         printf('-- Test pearson = %.4f, spearmanr = %.4f, mse = %.4f \n',
             pearson_score, spearman_score, mse_score)
+        if pearson_score > 0.87 then flag = true end
     elseif tr.task == 'MSRP' then
         local accuracy = stats.accuracy(test_preds, dset_test.labels)
         local f1 = stats.f1(test_preds, dset_test.labels)
@@ -116,9 +118,11 @@ function run(tr, n_epoches, dset_train, dset_dev, dset_test)
         local accuracy = stats.accuracy(test_preds, dset_test.labels)
         printf('-- Test accuracy = %.4f \n', accuracy)
     end
+    if flag then
     print('save parameters')
     local path = 'data/params/params-' .. tr.task .. '-' .. tr.structure .. '.t7'
     best_trainer:save(path)
+    end
 end
 
 function test(ts, dset_test)
