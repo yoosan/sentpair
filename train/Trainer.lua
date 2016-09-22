@@ -7,7 +7,7 @@ function Trainer:__init(config)
     self.learning_rate  = config.learning_rate  or 0.05
     self.batch_size     = config.batch_size     or 25
     self.num_layers     = config.num_layers     or 1
-    self.reg            = config.reg            or 1e-4
+    self.reg            = config.reg            or 3e-5
     self.structure      = config.structure      or 'lstm' -- {lstm, bilstm}
     self.feats_dim      = config.feats_dim      or 50
     self.extra_dim      = config.extra_dim      or 4

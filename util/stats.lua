@@ -13,6 +13,7 @@
 -- stats.accuracy
 -- stats.mse
 --]]
+
 -- Description: Pearson correlation coefficient
 -- Input: a is an n*2 table
 function math.pearson(a)
