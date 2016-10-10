@@ -18,14 +18,14 @@ The software can run on CPU or GPU, dependency requirements are following:
 
 The package should be installed are the following. For example, you can install the ``nn`` package by ``luarocks install nn``. 
 
-+ luarocks install nn
-+ luarocks install nngraph
-+ luarocks install optim
-+ luarocks install xlua
-+ luarocks install sys
-+ luarocks install lfs
-+ luarocks install cutorch
-+ luarocks install cunn
++ ``luarocks install nn``
++ ``luarocks install nngraph``
++ ``luarocks install optim``
++ ``luarocks install xlua``
++ ``luarocks install sys``
++ ``luarocks install lfs``
++ ``luarocks install cutorch``
++ ``luarocks install cunn``
 
 ##Running
 
