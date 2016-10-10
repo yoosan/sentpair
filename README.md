@@ -16,16 +16,16 @@ The software can run on CPU or GPU, dependency requirements are following:
 + torch7
 + python
 
-The torch package shoud be installed are the following. For example, you can install the nn package by ``luarock install nn``. 
+The package should be installed are the following. For example, you can install the ``nn`` package by ``luarocks install nn``. 
 
-+ cutorch
-+ cunn
-+ nn
-+ nngraph
-+ optim
-+ xlua
-+ sys
-+ lfs
++ luarocks install nn
++ luarocks install nngraph
++ luarocks install optim
++ luarocks install xlua
++ luarocks install sys
++ luarocks install lfs
++ luarocks install cutorch
++ luarocks install cunn
 
 ##Running
 
@@ -45,7 +45,7 @@ more details in the file ``main.lua``.
 
 ##Results
 
-The results looks like
+We achieve the results as 
 
 ![](static/res1.png)
 ![](static/res2.png)
