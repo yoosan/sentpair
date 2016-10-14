@@ -1,6 +1,6 @@
 #Sentpair
 
-The implementation of our paper **Modeling Sentence Pairs with Tree-structured Attentive Encoder**[(pdf)](https://yoosan.me/static/sentpair.pdf) to appear at the *COLING2016*. It runs both training and evaluation. Note that we just test the projects on Mac OS X and Ubuntu 14.
+The implementation of our paper **Modeling Sentence Pairs with Tree-structured Attentive Encoder**[(pdf)](https://arxiv.org/pdf/1610.02806.pdf) to appear at the *COLING2016*. It runs both training and evaluation. Note that we just test the projects on Mac OS X and Ubuntu 14.
 
 ##Preparing
 
@@ -21,10 +21,10 @@ The package should be installed are the following. For example, you can install 
 ```shell
 luarocks install nn
 luarocks install nngraph
+luarocks install penlight
 luarocks install optim
 luarocks install xlua
 luarocks install sys
-luarocks install lfs
 luarocks install cutorch
 luarocks install cunn
 ```
