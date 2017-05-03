@@ -1,8 +1,8 @@
-#Sentpair
+# Sentpair
 
 The implementation of our paper **Modeling Sentence Pairs with Tree-structured Attentive Encoder**[(pdf)](https://arxiv.org/pdf/1610.02806.pdf) to appear at the *COLING2016*. It runs both training and evaluation. Note that we just test the projects on Mac OS X and Ubuntu 14.
 
-##Preparing
+## Preparing
 
 You can download the preprocessed data (recommend) from [here](https://github.com/yoosan/sentpair/releases/download/predata/data.zip). Alternatively you can process them by yourself. The original links are:
 
@@ -10,7 +10,7 @@ You can download the preprocessed data (recommend) from [here](https://github.co
 + [MSRP dataset](https://www.microsoft.com/en-us/download/details.aspx?id=52398)
 + [AI2-8grade dataset]()
 
-##Requirement
+## Requirement
 The software can run on CPU or GPU, dependency requirements are following:
 
 + torch7
@@ -29,7 +29,7 @@ luarocks install cutorch
 luarocks install cunn
 ```
 
-##Running
+## Running
 
 To run our models, you can tap the command 
 
@@ -45,7 +45,7 @@ th main.lua -task MSRP -structure atreelstm -lr 0.05 -n_epoches 10
 
 more details in the file ``main.lua``.
 
-##Results
+## Results
 
 We achieve the results as 
 
@@ -54,7 +54,7 @@ We achieve the results as
 ![](static/fig1.png)
 
 
-##Bib
+## Bib
 ```
 @inproceedings{zhou2016sentpair,
     title={Modelling Sentence Pairs with Tree-structured Attentive Encoder},
@@ -64,5 +64,5 @@ We achieve the results as
 }
 ```
 
-##License
+## License
 MIT
